@@ -22,7 +22,8 @@ export async function runInSandbox(
     const escapedPrompt = prompt.replace(/'/g, "'\\''");
 
     const result = await sbx.commands.run(
-      `echo '${escapedPrompt}' | claude -p --dangerously-skip-permissions`
+      `echo '${escapedPrompt}' | claude -p --dangerously-skip-permissions`,
+      { timeoutMs: 5 * 60 * 1000 } // 5 minute timeout
     );
 
     return result.stdout;
