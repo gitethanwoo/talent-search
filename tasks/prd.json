@@ -1,0 +1,353 @@
+{
+  "name": "TeneX AI Sourcing Agent",
+  "description": "AI-native sourcing system using ephemeral E2B sandboxes with Claude Agent SDK (TypeScript) to discover engineering candidates from GitHub, HN, and Twitter",
+  "branchName": "ralph/sourcing-agent",
+  "userStories": [
+    {
+      "id": "US-001",
+      "title": "Set up TypeScript project structure",
+      "description": "As a developer, I want the project scaffolded so I can start building components.",
+      "acceptanceCriteria": [
+        "Create `src/` directory for main source code",
+        "Create `src/researchers/` directory for researcher modules",
+        "Create `src/prompts/` directory for agent prompts",
+        "Create `convex/` directory for Convex schema/functions",
+        "Create `e2b-template/` directory for E2B template definition",
+        "Create `package.json` with dependencies: @anthropic-ai/claude-agent-sdk, e2b, @e2b/code-interpreter, vitest",
+        "Create `tsconfig.json` with strict mode enabled",
+        "Create `.env.example` with: ANTHROPIC_API_KEY, E2B_API_KEY, CONVEX_URL, GH_TOKEN",
+        "pnpm install succeeds",
+        "pnpm typecheck passes"
+      ],
+      "priority": 1,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-002",
+      "title": "Create E2B template with Claude Code",
+      "description": "As an orchestrator, I need a pre-built E2B template with Claude Code and gh CLI installed for fast sandbox spin-up.",
+      "acceptanceCriteria": [
+        "Create `e2b-template/template.ts` using Template().fromNodeImage('24')",
+        "Template installs apt packages: curl, git, ripgrep, gh",
+        "Template installs @anthropic-ai/claude-code globally",
+        "Template installs @anthropic-ai/claude-agent-sdk",
+        "Create `e2b-template/build.ts` to build template with alias 'tenex-sourcing'",
+        "Template builds successfully with `npx tsx e2b-template/build.ts`",
+        "Sandbox.create('tenex-sourcing') works and has claude command available",
+        "pnpm typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-003",
+      "title": "Create Convex schema",
+      "description": "As a developer, I need the database schema defined so agents can persist leads.",
+      "acceptanceCriteria": [
+        "Create `convex/schema.ts` with tables: seedRepos, prospects, outreachDrafts, sourcingRuns",
+        "prospects table has fields: githubUsername, name, email, emailSource, twitterHandle, company, location, bio, discoveredFrom (array), confidenceTier, score, status, dateDiscovered",
+        "prospects table has indexes: by_github, by_tier, by_status",
+        "seedRepos table has fields: name, url, category, status, dateAdded",
+        "sourcingRuns table has fields: startedAt, completedAt, prospectsFound, errors",
+        "npx convex dev --typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-004",
+      "title": "Create Convex functions for prospects",
+      "description": "As an agent, I need CRUD functions to read/write prospects.",
+      "acceptanceCriteria": [
+        "Create `convex/prospects.ts` with mutations: createProspect, updateProspect, upsertProspect",
+        "Create queries: getProspectByGithub, getProspectsByTier, getProspectsByStatus",
+        "upsertProspect checks for existing githubUsername and updates if found",
+        "All functions have proper TypeScript types using Convex validators",
+        "npx convex dev --typecheck passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-003"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-005",
+      "title": "Build GitHub researcher prompt",
+      "description": "As a lead agent, I need a prompt that tells the GitHub researcher what to do.",
+      "acceptanceCriteria": [
+        "Create `src/prompts/github-researcher.txt`",
+        "Prompt instructs agent to use `gh` CLI commands",
+        "Prompt specifies output format: JSON with username, name, email, company, contributions",
+        "Prompt includes example commands: `gh api repos/.../contributors`, `gh api users/...`",
+        "Prompt tells agent to get email from commit history if not in profile",
+        "pnpm typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-006",
+      "title": "Build GitHub researcher module",
+      "description": "As a sourcing system, I need to extract contributors from GitHub repos.",
+      "acceptanceCriteria": [
+        "Create `src/researchers/github-researcher.ts`",
+        "Implement `async function researchRepo(repo: string): Promise<Lead[]>` using Claude Agent SDK",
+        "Agent uses Bash tool with `gh` CLI",
+        "Returns list of leads with: username, name, email, emailSource, company, location, bio, twitter, contributions",
+        "Test: Run against `vercel-labs/agent-browser`, expect 5+ leads returned",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-005"
+      ]
+    },
+    {
+      "id": "US-007",
+      "title": "Build HN researcher prompt",
+      "description": "As a lead agent, I need a prompt for searching Hacker News.",
+      "acceptanceCriteria": [
+        "Create `src/prompts/hn-researcher.txt`",
+        "Prompt instructs agent to use WebFetch with Algolia API",
+        "Prompt specifies: `https://hn.algolia.com/api/v1/search?query=...&tags=story`",
+        "Prompt specifies output format: JSON with title, author, points, url",
+        "Prompt tells agent to search for seed repo names",
+        "pnpm typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-008",
+      "title": "Build HN researcher module",
+      "description": "As a sourcing system, I need to find people posting about seed repos on HN.",
+      "acceptanceCriteria": [
+        "Create `src/researchers/hn-researcher.ts`",
+        "Implement `async function searchHN(query: string): Promise<HNLead[]>` using Claude Agent SDK",
+        "Agent uses WebFetch tool",
+        "Returns list with: hnUsername, storyTitle, points, url",
+        "Test: Search for 'agent-browser', expect 3+ results",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-007"
+      ]
+    },
+    {
+      "id": "US-009",
+      "title": "Build observer/validator",
+      "description": "As a security measure, I need to validate agent output before persisting.",
+      "acceptanceCriteria": [
+        "Create `src/observer.ts`",
+        "Implement `async function validateLeads(rawOutput: string): Promise<Lead[] | null>`",
+        "Uses Claude Haiku to validate JSON schema",
+        "Returns null if output is invalid or suspicious",
+        "Returns cleaned list of leads if valid",
+        "Test: Valid JSON passes, malformed JSON returns null",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 3,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-010",
+      "title": "Build E2B sandbox runner",
+      "description": "As an orchestrator, I need to run agents in ephemeral E2B sandboxes.",
+      "acceptanceCriteria": [
+        "Create `src/sandbox-runner.ts`",
+        "Implement `async function runInSandbox(prompt: string, env: Record<string, string>): Promise<string>`",
+        "Uses `Sandbox.create('tenex-sourcing')` with pre-built template",
+        "Passes environment variables (ANTHROPIC_API_KEY, GH_TOKEN) to sandbox",
+        "Runs agent via `echo 'prompt' | claude -p --dangerously-skip-permissions`",
+        "Returns stdout",
+        "Calls `sbx.kill()` in finally block",
+        "Test: Run simple prompt, verify output returned",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 3,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-002"
+      ]
+    },
+    {
+      "id": "US-011",
+      "title": "Create seed repos configuration",
+      "description": "As a user, I need to configure which repos to scan.",
+      "acceptanceCriteria": [
+        "Create `src/config/seed-repos.ts` with typed configuration",
+        "Include: vercel-labs/agent-browser, vercel-labs/agent-skills, vercel-labs/json-render",
+        "Include: anthropics/claude-code, vercel/ai",
+        "Each entry has: url, category ('agents' | 'sdks' | 'ai-tools')",
+        "Export typed array of SeedRepo objects",
+        "pnpm typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-012",
+      "title": "Add scoring logic",
+      "description": "As a sourcing system, I need to score leads by signal strength.",
+      "acceptanceCriteria": [
+        "Create `src/scoring.ts`",
+        "Implement `function scoreLead(lead: Lead): { score: number; tier: 'high' | 'mid' | 'low' }`",
+        "Score based on: contributionType (merged_pr=40, open_pr=30, issue=20, etc.)",
+        "Bonus for multiple sources (+10 per additional source)",
+        "Bonus for profile completeness (has email +8, has twitter +5, etc.)",
+        "Tier: 'high' (70+), 'mid' (40-69), 'low' (<40)",
+        "Test: Lead with merged PR + email scores 48+, tier 'mid' or 'high'",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ]
+    },
+    {
+      "id": "US-013",
+      "title": "Build Twitter/Nitter researcher prompt",
+      "description": "As a lead agent, I need a prompt for searching Twitter via Nitter.",
+      "acceptanceCriteria": [
+        "Create `src/prompts/twitter-researcher.txt`",
+        "Prompt instructs agent to use WebFetch with Nitter (no login required)",
+        "Prompt specifies URL pattern: `https://nitter.poast.org/search?f=tweets&q=...`",
+        "Prompt specifies output format: JSON with twitterHandle, tweetText, likes, retweets",
+        "Prompt includes fallback Nitter instances: nitter.poast.org, nitter.privacydev.net",
+        "pnpm typecheck passes"
+      ],
+      "priority": 2,
+      "passes": true,
+      "notes": "",
+      "dependsOn": [
+        "US-001"
+      ],
+      "completionNotes": "Completed by agent"
+    },
+    {
+      "id": "US-014",
+      "title": "Build Twitter/Nitter researcher module",
+      "description": "As a sourcing system, I need to find people tweeting about seed repos.",
+      "acceptanceCriteria": [
+        "Create `src/researchers/twitter-researcher.ts`",
+        "Implement `async function searchTwitter(query: string): Promise<TwitterLead[]>` using Claude Agent SDK",
+        "Agent uses WebFetch tool with Nitter frontend",
+        "Parses HTML response to extract: twitterHandle, tweetText, likes, retweets",
+        "Returns list of Twitter leads",
+        "Test: Search for 'agent-browser vercel', expect results with @handles",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 4,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-013"
+      ]
+    },
+    {
+      "id": "US-015",
+      "title": "Build lead agent orchestrator",
+      "description": "As a daily job, I need to coordinate all researchers and persist results.",
+      "acceptanceCriteria": [
+        "Create `src/orchestrator.ts`",
+        "Implement `async function runDailySourcing(seedRepos: SeedRepo[]): Promise<SourcingResult>`",
+        "Spawns GitHub researcher for each seed repo (can be parallel)",
+        "Spawns HN researcher for each seed repo",
+        "Spawns Twitter researcher for each seed repo",
+        "Collects all results",
+        "Passes through observer/validator",
+        "Scores each lead",
+        "Persists valid leads to Convex via HTTP API",
+        "Logs run to sourcingRuns table",
+        "Test: Mock researchers, verify Convex calls made",
+        "pnpm typecheck passes",
+        "pnpm test passes"
+      ],
+      "priority": 5,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-004",
+        "US-006",
+        "US-008",
+        "US-009",
+        "US-010",
+        "US-012",
+        "US-014"
+      ]
+    },
+    {
+      "id": "US-016",
+      "title": "Create CLI entry point",
+      "description": "As a user, I need a CLI to run the sourcing agent manually or via cron.",
+      "acceptanceCriteria": [
+        "Create `src/cli.ts` as main entry point",
+        "Supports `pnpm run source` to run daily sourcing",
+        "Supports `pnpm run source --repo <repo>` to scan single repo",
+        "Loads environment variables from .env",
+        "Prints summary of leads found at completion",
+        "Add scripts to package.json",
+        "pnpm typecheck passes"
+      ],
+      "priority": 6,
+      "passes": false,
+      "notes": "",
+      "dependsOn": [
+        "US-015"
+      ]
+    }
+  ],
+  "metadata": {
+    "updatedAt": "2026-01-21T02:58:16.915Z"
+  }
+}
