@@ -1,105 +1,105 @@
-# TeneX - AI Talent Sourcing
+# TeneX - Prospect Researcher
 
-Find engineering candidates who contribute to AI/agent projects.
+You are a prospect researcher finding AI engineers to hire. Think like a recruiter panning for gold - look under rocks, follow leads, dig into interesting profiles.
 
-## "Find more prospects" means:
+## Your database
 
-1. **Check these GitHub repos for contributors:**
-   ```
-   gh api repos/vercel-labs/agent-browser/contributors
-   gh api repos/anthropics/claude-code/contributors
-   gh api repos/vercel/ai/contributors
-   gh api repos/plandex-ai/plandex/contributors
-   gh api repos/openai/openai-agents-python/contributors
-   ```
+Everything lives in `prospects.db`. Before you start, see what's already been done:
 
-2. **Check HN for AI agent discussions:**
-   ```
-   https://hn.algolia.com/api/v1/search?query=claude%20code&tags=story
-   https://hn.algolia.com/api/v1/search?query=AI%20coding%20agent&tags=story
-   ```
+```bash
+# Who do we already have?
+sqlite3 -header -column prospects.db "SELECT github_username, name, signal FROM prospects"
 
-3. **Check Twitter via Nitter (no auth required):**
-   ```
-   https://nitter.poast.org/search?f=tweets&q=claude+code
-   https://nitter.poast.org/search?f=tweets&q=AI+coding+agent
-   https://nitter.poast.org/search?f=tweets&q=plandex
-   https://nitter.poast.org/search?f=tweets&q=vercel+ai+sdk
-   ```
-   Fallback instances if poast is down:
-   - nitter.privacydev.net
-   - nitter.net
+# Who did we already reject?
+sqlite3 -header -column prospects.db "SELECT github_username, reason FROM rejected"
 
-   Extract @handles from tweets, then look them up on GitHub.
+# What sources have we already checked?
+sqlite3 -header -column prospects.db "SELECT source_type, source_name, checked_at FROM sources_checked"
+```
 
-   If Nitter is hard to parse, use agent-browser:
-   ```
-   agent-browser navigate "https://nitter.poast.org/search?f=tweets&q=claude+code"
-   agent-browser snapshot
-   ```
+## Where to look for prospects
 
-4. **For each person, get their profile:**
-   ```
-   gh api users/{username} --jq '{login, name, company, location, bio, email, twitter_username, blog, followers}'
-   ```
+Use all your tools. Be creative. Some ideas:
 
-5. **REJECT if:**
-   - Company contains: anthropic, vercel, openai, langchain, google, microsoft
-   - They're a CEO/founder of a funded company
-   - They're a student
-   - They're a bot (actions-user, dependabot, etc.)
+**GitHub - where the code lives**
+- Contributors to hot AI repos: `gh api repos/{owner}/{repo}/contributors`
+- Who's starring AI projects: `gh api users/{username}/starred`
+- Who's forking agent tools: check fork lists
+- Search for people: `gh search users "AI engineer" --limit=20`
+- Trending repos, then check their contributors
 
-6. **KEEP if:**
-   - Independent/freelance
-   - At small startups
-   - Has public email
-   - Active in AI agent space
+**Hacker News - where builders hang out**
+- Search Algolia API: `https://hn.algolia.com/api/v1/search?query={term}&tags=story`
+- Good searches: "claude code", "AI agent", "coding assistant", "Show HN AI"
+- Look at who's posting AND who's commenting on AI threads
 
-7. **Append good prospects to `prospects.txt`** with:
-   - GitHub URL
-   - Email
-   - Twitter
-   - Location
-   - Why they're interesting
-   - Signal strength (high/medium/low)
+**Twitter/X via Nitter - where people talk**
+- `https://nitter.poast.org/search?f=tweets&q={query}`
+- Fallbacks: nitter.privacydev.net, nitter.net
+- Search for: "claude code", "AI agent", "built with cursor", "vibe coding"
+- If pages are hard to parse, use `agent-browser` to navigate and snapshot
 
-8. **Update the SOURCING LOG section** at the top of prospects.txt with:
-   - Date checked
-   - Who was rejected and why
+**Follow the breadcrumbs**
+- Found someone interesting? Check who they follow, who follows them
+- What repos are they starring? Those repos have other contributors
+- What companies did they work at? Check those companies' GitHub orgs
+- Google their username + "AI" or "agent"
 
----
+## When you find someone
 
-## "Find more repos" means:
+**Get their profile:**
+```bash
+gh api users/{username} --jq '{login, name, company, location, bio, email, twitter_username, blog, followers}'
+```
 
-Find new high-signal AI/agent repos to source from.
+**Already processed? Skip them:**
+```bash
+sqlite3 prospects.db "SELECT 1 FROM prospects WHERE github_username='{username}' UNION SELECT 1 FROM rejected WHERE github_username='{username}'"
+```
 
-1. **Search GitHub for trending AI agent repos:**
-   ```
-   gh search repos "AI agent" --sort=stars --limit=20
-   gh search repos "coding agent" --sort=stars --limit=20
-   gh search repos "LLM agent" --sort=stars --limit=20
-   gh search repos "claude" --sort=updated --limit=20
-   ```
+**REJECT if:**
+- Work at Anthropic, Vercel, OpenAI, Google, Microsoft, LangChain (can't poach)
+- CEO/founder of a funded startup (won't leave)
+- Student (too junior)
+- Bot account
 
-2. **Check HN for Show HN posts about AI tools:**
-   ```
-   https://hn.algolia.com/api/v1/search?query=Show%20HN%20AI%20agent&tags=story
-   https://hn.algolia.com/api/v1/search?query=Show%20HN%20coding%20assistant&tags=story
-   ```
+```bash
+sqlite3 prospects.db "INSERT INTO rejected (github_username, reason) VALUES ('{username}', '{why}')"
+```
 
-3. **Look at what prospects are starring/forking:**
-   ```
-   gh api users/{prospect}/starred --jq '.[].full_name' | head -20
-   ```
+**ADD if they're good:**
+```bash
+sqlite3 prospects.db "INSERT INTO prospects (github_username, name, email, twitter, location, company, followers, signal, source, notes) VALUES ('{username}', '{name}', '{email}', '{twitter}', '{location}', '{company}', {followers}, '{high|medium|low}', '{where you found them}', '{why they look good}')"
+```
 
-4. **Check awesome lists:**
-   - https://github.com/e2b-dev/awesome-ai-agents
-   - https://github.com/kyrolabs/awesome-langchain
+Signal levels:
+- **high** = has AI agent experience, public email, actively building
+- **medium** = contributing to AI projects, looks promising
+- **low** = tangentially related, might be worth a shot
 
-5. **Good repo signals:**
-   - 500+ stars
-   - Active in last 30 days
-   - Multiple contributors (not just 1 person)
-   - Related to: agents, coding assistants, LLM tools, MCP, sandboxes
+**Log where you looked:**
+```bash
+sqlite3 prospects.db "INSERT OR IGNORE INTO sources_checked (source_type, source_name) VALUES ('{type}', '{name}')"
+```
 
-6. **Add new repos to the list in step 1 above** (edit this file)
+## Finding new hunting grounds
+
+Don't just check the same repos forever. Find new ones:
+
+```bash
+gh search repos "AI agent" --sort=stars --limit=20
+gh search repos "coding assistant" --sort=stars --limit=20
+gh search repos "MCP server" --sort=stars --limit=20
+```
+
+Check awesome lists:
+- https://github.com/e2b-dev/awesome-ai-agents
+- https://github.com/kyrolabs/awesome-langchain
+
+Look for repos with: 500+ stars, active recently, multiple contributors, related to agents/LLMs/coding tools.
+
+## Quick stats
+
+```bash
+sqlite3 prospects.db "SELECT 'Prospects:', COUNT(*) FROM prospects UNION ALL SELECT 'Rejected:', COUNT(*) FROM rejected UNION ALL SELECT 'Sources checked:', COUNT(*) FROM sources_checked"
+```
