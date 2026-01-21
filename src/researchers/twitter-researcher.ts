@@ -1,13 +1,13 @@
 /**
  * Twitter/Nitter Researcher Module
- * Searches for tweets about seed repositories using Nitter frontend (no login required)
+ * Searches for tweets about seed repositories using E2B sandbox with Claude Code
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import type { Lead } from '../observer.js';
+import { runInSandbox } from '../sandbox-runner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -34,17 +34,16 @@ interface TweetResult {
   retweets?: number;
 }
 
-interface AgentMessage {
-  type?: string;
-  result?: string;
-}
-
 /**
  * Search Twitter via Nitter for tweets about a query term
  * @param searchQuery - The search term (e.g., "agent-browser vercel")
+ * @param env - Environment variables for the sandbox (optional, defaults to process.env)
  * @returns Array of TwitterLead objects with Twitter-specific information
  */
-export async function searchTwitter(searchQuery: string): Promise<TwitterLead[]> {
+export async function searchTwitter(
+  searchQuery: string,
+  env?: Record<string, string>
+): Promise<TwitterLead[]> {
   const prompt = `${TWITTER_RESEARCHER_PROMPT}
 
 ## Search Query
@@ -52,19 +51,11 @@ ${searchQuery}
 
 Search Twitter via Nitter for tweets about "${searchQuery}" and return the results in the specified JSON format.`;
 
-  let result = '';
+  const sandboxEnv = env ?? {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+  };
 
-  for await (const message of query({
-    prompt,
-    options: {
-      allowedTools: ['WebFetch'],
-      permissionMode: 'bypassPermissions',
-    },
-  }) as AsyncIterable<AgentMessage>) {
-    if (message.result) {
-      result = message.result;
-    }
-  }
+  const result = await runInSandbox(prompt, sandboxEnv);
 
   return parseTwitterOutput(result);
 }
@@ -72,10 +63,14 @@ Search Twitter via Nitter for tweets about "${searchQuery}" and return the resul
 /**
  * Search Twitter and convert results to standard Lead format
  * @param searchQuery - The search term
+ * @param env - Environment variables for the sandbox (optional, defaults to process.env)
  * @returns Array of leads with Twitter discovery information
  */
-export async function searchTwitterAsLeads(searchQuery: string): Promise<Lead[]> {
-  const twitterLeads = await searchTwitter(searchQuery);
+export async function searchTwitterAsLeads(
+  searchQuery: string,
+  env?: Record<string, string>
+): Promise<Lead[]> {
+  const twitterLeads = await searchTwitter(searchQuery, env);
   return twitterLeads.map((twitterLead) => convertToLead(twitterLead, searchQuery));
 }
 

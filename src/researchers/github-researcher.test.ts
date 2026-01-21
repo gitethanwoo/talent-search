@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { researchRepo } from './github-researcher.js';
 
-// Mock the Claude Agent SDK
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
+// Mock the sandbox runner
+vi.mock('../sandbox-runner.js', () => ({
+  runInSandbox: vi.fn(),
 }));
 
 // Mock fs for reading the prompt file
@@ -11,10 +11,10 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn().mockReturnValue('Mock prompt content'),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { runInSandbox } from '../sandbox-runner.js';
 
 describe('github-researcher', () => {
-  const mockQuery = query as ReturnType<typeof vi.fn>;
+  const mockRunInSandbox = runInSandbox as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -42,9 +42,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('vercel-labs/agent-browser');
 
@@ -71,26 +69,19 @@ describe('github-researcher', () => {
       });
     });
 
-    it('calls query with correct options', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"contributors": []}' };
-      });
+    it('calls runInSandbox with prompt containing repo', async () => {
+      mockRunInSandbox.mockResolvedValue('{"contributors": []}');
 
       await researchRepo('test/repo');
 
-      expect(mockQuery).toHaveBeenCalledWith({
-        prompt: expect.stringContaining('test/repo'),
-        options: {
-          allowedTools: ['Bash'],
-          permissionMode: 'bypassPermissions',
-        },
-      });
+      expect(mockRunInSandbox).toHaveBeenCalledWith(
+        expect.stringContaining('test/repo'),
+        expect.any(Object)
+      );
     });
 
     it('returns empty array for invalid JSON output', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: 'not valid json' };
-      });
+      mockRunInSandbox.mockResolvedValue('not valid json');
 
       const leads = await researchRepo('test/repo');
 
@@ -98,9 +89,7 @@ describe('github-researcher', () => {
     });
 
     it('returns empty array when no contributors key', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"data": []}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"data": []}');
 
       const leads = await researchRepo('test/repo');
 
@@ -108,9 +97,7 @@ describe('github-researcher', () => {
     });
 
     it('returns empty array when contributors is not an array', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"contributors": "not an array"}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"contributors": "not an array"}');
 
       const leads = await researchRepo('test/repo');
 
@@ -128,11 +115,9 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield {
-          result: `Here are the contributors:\n\n${JSON.stringify(contributorData)}\n\nDone!`,
-        };
-      });
+      mockRunInSandbox.mockResolvedValue(
+        `Here are the contributors:\n\n${JSON.stringify(contributorData)}\n\nDone!`
+      );
 
       const leads = await researchRepo('test/repo');
 
@@ -153,9 +138,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -178,9 +161,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -198,9 +179,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -217,9 +196,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -244,9 +221,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -270,9 +245,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 
@@ -289,9 +262,7 @@ describe('github-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(contributorData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(contributorData));
 
       const leads = await researchRepo('test/repo');
 

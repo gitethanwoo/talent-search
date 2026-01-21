@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchTwitter, searchTwitterAsLeads } from './twitter-researcher.js';
 
-// Mock the Claude Agent SDK
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
+// Mock the sandbox runner
+vi.mock('../sandbox-runner.js', () => ({
+  runInSandbox: vi.fn(),
 }));
 
 // Mock fs for reading the prompt file
@@ -11,10 +11,10 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn().mockReturnValue('Mock prompt content'),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { runInSandbox } from '../sandbox-runner.js';
 
 describe('twitter-researcher', () => {
-  const mockQuery = query as ReturnType<typeof vi.fn>;
+  const mockRunInSandbox = runInSandbox as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -26,7 +26,7 @@ describe('twitter-researcher', () => {
         results: [
           {
             twitterHandle: 'devuser1',
-            tweetText: 'Just tried agent-browser from Vercel, amazing tool! 🚀',
+            tweetText: 'Just tried agent-browser from Vercel, amazing tool!',
             likes: 156,
             retweets: 42,
           },
@@ -45,16 +45,14 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitter('agent-browser vercel');
 
       expect(leads).toHaveLength(3);
       expect(leads[0]).toEqual({
         twitterHandle: 'devuser1',
-        tweetText: 'Just tried agent-browser from Vercel, amazing tool! 🚀',
+        tweetText: 'Just tried agent-browser from Vercel, amazing tool!',
         likes: 156,
         retweets: 42,
       });
@@ -72,26 +70,19 @@ describe('twitter-researcher', () => {
       });
     });
 
-    it('calls query with WebFetch tool and correct options', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"results": []}' };
-      });
+    it('calls runInSandbox with prompt containing search query', async () => {
+      mockRunInSandbox.mockResolvedValue('{"results": []}');
 
       await searchTwitter('test-query');
 
-      expect(mockQuery).toHaveBeenCalledWith({
-        prompt: expect.stringContaining('test-query'),
-        options: {
-          allowedTools: ['WebFetch'],
-          permissionMode: 'bypassPermissions',
-        },
-      });
+      expect(mockRunInSandbox).toHaveBeenCalledWith(
+        expect.stringContaining('test-query'),
+        expect.any(Object)
+      );
     });
 
     it('returns empty array for invalid JSON output', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: 'not valid json' };
-      });
+      mockRunInSandbox.mockResolvedValue('not valid json');
 
       const leads = await searchTwitter('test-query');
 
@@ -99,9 +90,7 @@ describe('twitter-researcher', () => {
     });
 
     it('returns empty array when no results key', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"data": []}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"data": []}');
 
       const leads = await searchTwitter('test-query');
 
@@ -109,9 +98,7 @@ describe('twitter-researcher', () => {
     });
 
     it('returns empty array when results is not an array', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"results": "not an array"}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"results": "not an array"}');
 
       const leads = await searchTwitter('test-query');
 
@@ -130,11 +117,9 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield {
-          result: `Here are the Twitter results:\n\n${JSON.stringify(twitterData)}\n\nSearch complete!`,
-        };
-      });
+      mockRunInSandbox.mockResolvedValue(
+        `Here are the Twitter results:\n\n${JSON.stringify(twitterData)}\n\nSearch complete!`
+      );
 
       const leads = await searchTwitter('test-query');
 
@@ -166,9 +151,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitter('test-query');
 
@@ -186,9 +169,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitter('test-query');
 
@@ -215,9 +196,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitter('test-query');
 
@@ -240,9 +219,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('agent-browser');
 
@@ -270,9 +247,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -291,9 +266,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -312,9 +285,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -333,9 +304,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -356,9 +325,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -378,9 +345,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -400,9 +365,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -422,9 +385,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -443,9 +404,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitterAsLeads('test');
 
@@ -486,9 +445,7 @@ describe('twitter-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(twitterData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(twitterData));
 
       const leads = await searchTwitter('agent-browser vercel');
 

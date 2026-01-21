@@ -7,7 +7,6 @@ import { researchRepo } from './researchers/github-researcher.js';
 import { searchHNAsLeads } from './researchers/hn-researcher.js';
 import { searchTwitterAsLeads } from './researchers/twitter-researcher.js';
 import { validateLeads, type Lead } from './observer.js';
-import { scoreLead } from './scoring.js';
 import type { SeedRepo } from './config/seed-repos.js';
 
 /**
@@ -306,22 +305,14 @@ export async function runDailySourcing(
   const mergedLeads = mergeLeads(allLeads);
   const totalLeadsFound = mergedLeads.length;
 
-  // Validate and score leads
+  // Validate leads through observer
   const validatedLeads: Lead[] = [];
 
   for (const lead of mergedLeads) {
-    // Validate the lead through observer
     const validated = await validateLeads(JSON.stringify([lead]));
 
     if (validated && validated.length > 0) {
-      // Re-score the lead with potentially merged discoveredFrom
-      const scoreResult = scoreLead(validated[0]);
-      const scoredLead: Lead = {
-        ...validated[0],
-        score: scoreResult.score,
-        confidenceTier: scoreResult.tier,
-      };
-      validatedLeads.push(scoredLead);
+      validatedLeads.push(validated[0]);
     }
   }
 

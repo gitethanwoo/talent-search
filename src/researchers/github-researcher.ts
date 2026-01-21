@@ -1,13 +1,13 @@
 /**
  * GitHub Researcher Module
- * Extracts contributors from GitHub repos using Claude Agent SDK
+ * Extracts contributors from GitHub repos using E2B sandbox with Claude Code
  */
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
 import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import type { Lead } from '../observer.js';
+import { runInSandbox } from '../sandbox-runner.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -29,17 +29,16 @@ interface GitHubContributor {
   contributions: number;
 }
 
-interface AgentMessage {
-  type?: string;
-  result?: string;
-}
-
 /**
  * Research a GitHub repository and extract contributor information as leads
  * @param repo - Repository in format "owner/repo"
+ * @param env - Environment variables for the sandbox (optional, defaults to process.env)
  * @returns Array of leads with contributor information
  */
-export async function researchRepo(repo: string): Promise<Lead[]> {
+export async function researchRepo(
+  repo: string,
+  env?: Record<string, string>
+): Promise<Lead[]> {
   const prompt = `${GITHUB_RESEARCHER_PROMPT}
 
 ## Target Repository
@@ -47,19 +46,12 @@ ${repo}
 
 Research this repository and return the contributor data in the specified JSON format.`;
 
-  let result = '';
+  const sandboxEnv = env ?? {
+    ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ?? '',
+    GH_TOKEN: process.env.GH_TOKEN ?? '',
+  };
 
-  for await (const message of query({
-    prompt,
-    options: {
-      allowedTools: ['Bash'],
-      permissionMode: 'bypassPermissions',
-    },
-  }) as AsyncIterable<AgentMessage>) {
-    if (message.result) {
-      result = message.result;
-    }
-  }
+  const result = await runInSandbox(prompt, sandboxEnv);
 
   return parseContributorOutput(result, repo);
 }

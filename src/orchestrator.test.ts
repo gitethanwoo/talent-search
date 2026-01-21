@@ -21,22 +21,15 @@ vi.mock('./observer.js', () => ({
   validateLeads: vi.fn(),
 }));
 
-// Mock the scoring module
-vi.mock('./scoring.js', () => ({
-  scoreLead: vi.fn(),
-}));
-
 import { researchRepo } from './researchers/github-researcher.js';
 import { searchHNAsLeads } from './researchers/hn-researcher.js';
 import { searchTwitterAsLeads } from './researchers/twitter-researcher.js';
 import { validateLeads } from './observer.js';
-import { scoreLead } from './scoring.js';
 
 const mockResearchRepo = researchRepo as ReturnType<typeof vi.fn>;
 const mockSearchHNAsLeads = searchHNAsLeads as ReturnType<typeof vi.fn>;
 const mockSearchTwitterAsLeads = searchTwitterAsLeads as ReturnType<typeof vi.fn>;
 const mockValidateLeads = validateLeads as ReturnType<typeof vi.fn>;
-const mockScoreLead = scoreLead as ReturnType<typeof vi.fn>;
 
 describe('orchestrator', () => {
   // Mock Convex client
@@ -73,7 +66,6 @@ describe('orchestrator', () => {
         return null;
       }
     });
-    mockScoreLead.mockReturnValue({ score: 50, tier: 'mid' });
     mockUpsertProspect.mockResolvedValue(undefined);
     mockLogSourcingRun.mockResolvedValue(undefined);
   });
@@ -169,15 +161,6 @@ describe('orchestrator', () => {
       await runDailySourcing(testSeedRepos, { convexClient: mockConvexClient });
 
       expect(mockValidateLeads).toHaveBeenCalled();
-    });
-
-    it('scores validated leads', async () => {
-      const lead = createMockLead();
-      mockResearchRepo.mockResolvedValue([lead]);
-
-      await runDailySourcing(testSeedRepos, { convexClient: mockConvexClient });
-
-      expect(mockScoreLead).toHaveBeenCalled();
     });
 
     it('persists valid leads to Convex', async () => {
@@ -295,23 +278,6 @@ describe('orchestrator', () => {
       expect(mockUpsertProspect).toHaveBeenCalledTimes(1);
     });
 
-    it('updates lead score and tier after re-scoring', async () => {
-      const lead = createMockLead({
-        score: 30,
-        confidenceTier: 'low',
-      });
-      mockResearchRepo.mockResolvedValue([lead]);
-      mockScoreLead.mockReturnValue({ score: 75, tier: 'high' });
-
-      await runDailySourcing(testSeedRepos, { convexClient: mockConvexClient });
-
-      expect(mockUpsertProspect).toHaveBeenCalledWith(
-        expect.objectContaining({
-          score: 75,
-          confidenceTier: 'high',
-        })
-      );
-    });
   });
 
   describe('lead merging', () => {

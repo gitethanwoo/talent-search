@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { searchHN, searchHNAsLeads } from './hn-researcher.js';
 
-// Mock the Claude Agent SDK
-vi.mock('@anthropic-ai/claude-agent-sdk', () => ({
-  query: vi.fn(),
+// Mock the sandbox runner
+vi.mock('../sandbox-runner.js', () => ({
+  runInSandbox: vi.fn(),
 }));
 
 // Mock fs for reading the prompt file
@@ -11,10 +11,10 @@ vi.mock('fs', () => ({
   readFileSync: vi.fn().mockReturnValue('Mock prompt content'),
 }));
 
-import { query } from '@anthropic-ai/claude-agent-sdk';
+import { runInSandbox } from '../sandbox-runner.js';
 
 describe('hn-researcher', () => {
-  const mockQuery = query as ReturnType<typeof vi.fn>;
+  const mockRunInSandbox = runInSandbox as ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,9 +45,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHN('agent-browser');
 
@@ -72,26 +70,19 @@ describe('hn-researcher', () => {
       });
     });
 
-    it('calls query with WebFetch tool and correct options', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"results": []}' };
-      });
+    it('calls runInSandbox with prompt containing search query', async () => {
+      mockRunInSandbox.mockResolvedValue('{"results": []}');
 
       await searchHN('test-query');
 
-      expect(mockQuery).toHaveBeenCalledWith({
-        prompt: expect.stringContaining('test-query'),
-        options: {
-          allowedTools: ['WebFetch'],
-          permissionMode: 'bypassPermissions',
-        },
-      });
+      expect(mockRunInSandbox).toHaveBeenCalledWith(
+        expect.stringContaining('test-query'),
+        expect.any(Object)
+      );
     });
 
     it('returns empty array for invalid JSON output', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: 'not valid json' };
-      });
+      mockRunInSandbox.mockResolvedValue('not valid json');
 
       const leads = await searchHN('test-query');
 
@@ -99,9 +90,7 @@ describe('hn-researcher', () => {
     });
 
     it('returns empty array when no results key', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"data": []}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"data": []}');
 
       const leads = await searchHN('test-query');
 
@@ -109,9 +98,7 @@ describe('hn-researcher', () => {
     });
 
     it('returns empty array when results is not an array', async () => {
-      mockQuery.mockImplementation(async function* () {
-        yield { result: '{"results": "not an array"}' };
-      });
+      mockRunInSandbox.mockResolvedValue('{"results": "not an array"}');
 
       const leads = await searchHN('test-query');
 
@@ -130,11 +117,9 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield {
-          result: `Here are the HN results:\n\n${JSON.stringify(hnData)}\n\nSearch complete!`,
-        };
-      });
+      mockRunInSandbox.mockResolvedValue(
+        `Here are the HN results:\n\n${JSON.stringify(hnData)}\n\nSearch complete!`
+      );
 
       const leads = await searchHN('test-query');
 
@@ -166,9 +151,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHN('test-query');
 
@@ -187,9 +170,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHN('test-query');
 
@@ -211,9 +192,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('agent-browser');
 
@@ -240,9 +219,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -261,9 +238,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -282,9 +257,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -303,9 +276,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -326,9 +297,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -348,9 +317,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -370,9 +337,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -391,9 +356,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHNAsLeads('test');
 
@@ -434,9 +397,7 @@ describe('hn-researcher', () => {
         ],
       };
 
-      mockQuery.mockImplementation(async function* () {
-        yield { result: JSON.stringify(hnData) };
-      });
+      mockRunInSandbox.mockResolvedValue(JSON.stringify(hnData));
 
       const leads = await searchHN('agent-browser');
 
