@@ -39,7 +39,7 @@ export const runDailySourcing = internalAction({
       // Clone the repo and run sourcing
       // Note: In production, you might bake this into the template
       const setupResult = await sbx.commands.run(
-        "git clone https://github.com/your-org/tenex.git /app && cd /app && pnpm install",
+        "git clone https://github.com/gitethanwoo/talent-search.git /app && cd /app && pnpm install",
         { timeoutMs: 5 * 60 * 1000 }
       );
 
