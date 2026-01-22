@@ -123,9 +123,14 @@ function StatCard({ value, label, accent }: { value: number; label: string; acce
   )
 }
 
-function DraftCard({ draft, index }: { draft: Draft; index: number }) {
-  const [open, setOpen] = useState(false)
+function DraftCard({ draft, index, defaultOpen = false }: { draft: Draft; index: number; defaultOpen?: boolean }) {
+  const [open, setOpen] = useState(defaultOpen)
   const [rewriting, setRewriting] = useState(false)
+
+  // Open when defaultOpen changes to true
+  useEffect(() => {
+    if (defaultOpen) setOpen(true)
+  }, [defaultOpen])
 
   const handleRewrite = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -778,6 +783,7 @@ function App() {
 
   const [data, setData] = useState<Data | null>(null)
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
+  const [expandedDraftUsername, setExpandedDraftUsername] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [expandedProspectId, setExpandedProspectId] = useState<number | null>(null)
   const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
@@ -886,7 +892,14 @@ function App() {
                 <div className="font-mono text-zinc-700 text-sm">NO_DRAFTS_PENDING</div>
               </div>
             ) : (
-              data.drafts.map((d, i) => <DraftCard key={d.id} draft={d} index={i} />)
+              data.drafts.map((d, i) => (
+                <DraftCard
+                  key={d.id}
+                  draft={d}
+                  index={i}
+                  defaultOpen={expandedDraftUsername === d.github_username}
+                />
+              ))
             )}
           </div>
         )}
@@ -944,7 +957,7 @@ function App() {
                       isExpanded={expandedProspectId === p.id}
                       onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
                       hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
-                      onDraftClick={() => setTab('drafts')}
+                      onDraftClick={() => { setExpandedDraftUsername(p.github_username); setTab('drafts') }}
                     />
                   ))}
                 </tbody>
