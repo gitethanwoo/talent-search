@@ -261,11 +261,23 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
   )
 }
 
+type OutreachFilter = 'all' | 'not_contacted' | 'in_progress' | 'replied' | 'interested' | 'closed'
+
+const outreachFilterLabels: Record<OutreachFilter, string> = {
+  all: 'All',
+  not_contacted: 'Not Contacted',
+  in_progress: 'In Progress',
+  replied: 'Replied',
+  interested: 'Interested',
+  closed: 'Closed'
+}
+
 function App() {
   const [data, setData] = useState<Data | null>(null)
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
   const [loaded, setLoaded] = useState(false)
   const [expandedProspectId, setExpandedProspectId] = useState<number | null>(null)
+  const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
 
   useEffect(() => {
     fetch('/data.json')
@@ -276,6 +288,23 @@ function App() {
       })
       .catch(console.error)
   }, [])
+
+  // Compute outreach filter counts
+  const outreachCounts = data ? (Object.keys(outreachFilterLabels) as OutreachFilter[]).reduce((acc, key) => {
+    if (key === 'all') {
+      acc[key] = data.prospects.length
+    } else {
+      acc[key] = data.prospects.filter(p => (p.outreach_status || 'not_contacted') === key).length
+    }
+    return acc
+  }, {} as Record<OutreachFilter, number>) : {} as Record<OutreachFilter, number>
+
+  // Filter prospects based on outreach status
+  const filteredProspects = data ? (
+    outreachFilter === 'all'
+      ? data.prospects
+      : data.prospects.filter(p => (p.outreach_status || 'not_contacted') === outreachFilter)
+  ) : []
 
   if (!data) {
     return (
@@ -348,33 +377,50 @@ function App() {
 
         {/* Prospects Tab */}
         {tab === 'prospects' && (
-          <div className="border border-zinc-900">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-12">#</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Handle</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Name</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
-                  <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="Ships Fast">⚡</th>
-                  <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="AI Native">🤖</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
-                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.prospects.map((p, i) => (
-                  <ProspectRow
-                    key={p.id}
-                    p={p}
-                    index={i}
-                    isExpanded={expandedProspectId === p.id}
-                    onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
-                  />
+          <div>
+            {/* Outreach Status Filter */}
+            <div className="mb-4 flex items-center gap-3">
+              <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Filter by status:</span>
+              <select
+                value={outreachFilter}
+                onChange={e => setOutreachFilter(e.target.value as OutreachFilter)}
+                className="font-mono text-sm bg-zinc-900 border border-zinc-800 text-zinc-300 px-3 py-2 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
+              >
+                {(Object.keys(outreachFilterLabels) as OutreachFilter[]).map(key => (
+                  <option key={key} value={key}>
+                    {outreachFilterLabels[key]} ({outreachCounts[key]})
+                  </option>
                 ))}
-              </tbody>
-            </table>
+              </select>
+            </div>
+            <div className="border border-zinc-900">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-12">#</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Handle</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Name</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
+                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="Ships Fast">⚡</th>
+                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="AI Native">🤖</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Source</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredProspects.map((p, i) => (
+                    <ProspectRow
+                      key={p.id}
+                      p={p}
+                      index={i}
+                      isExpanded={expandedProspectId === p.id}
+                      onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
+                    />
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
 
