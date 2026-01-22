@@ -165,6 +165,13 @@ function actionLoggerPlugin() {
               let prompt = ''
               let taskAction = action.action
 
+              // Tool restrictions per action type
+              const toolsByAction: Record<string, string[]> = {
+                enrich: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read'],
+                draft: ['Bash', 'Read', 'TodoWrite'],
+                reject: ['Bash'],
+              }
+
               if (action.action === 'enrich') {
                 prompt = `/prospect-enricher
 
@@ -252,23 +259,71 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                 tasks.set(taskId, task)
                 broadcastTaskUpdate(task)
 
-                console.log('\x1b[33m[EXEC]\x1b[0m', `[${taskId}]`, `claude -p "${prompt}"`)
+                const tools = toolsByAction[taskAction] || ['Bash']
+                console.log('\x1b[33m[EXEC]\x1b[0m', `[${taskId}]`, `claude -p "..." --tools ${tools.join(',')}`)
 
-                // Spawn with text output, skip permissions for headless operation
-                const child = spawn('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+                // Spawn with restricted tools and pre-approved permissions
+                const child = spawn('claude', [
+                  '-p', prompt,
+                  '--tools', tools.join(','),
+                  '--allowedTools', tools.join(','),
+                  '--output-format', 'stream-json',
+                  '--verbose'
+                ], {
                   cwd: path.resolve(__dirname, '..'),
                   stdio: ['ignore', 'pipe', 'pipe']
                 })
 
                 let outputBuffer = ''
+                let formattedOutput = ''
+
+                function formatStreamJson(line: string): string | null {
+                  try {
+                    const event = JSON.parse(line)
+
+                    if (event.type === 'assistant' && event.message?.content) {
+                      for (const block of event.message.content) {
+                        if (block.type === 'text' && block.text) {
+                          return block.text
+                        }
+                        if (block.type === 'tool_use') {
+                          const input = block.input?.command || block.input?.pattern || block.input?.file_path || JSON.stringify(block.input).slice(0, 100)
+                          return `\n▶ ${block.name}: ${input}\n`
+                        }
+                      }
+                    }
+
+                    if (event.type === 'user' && event.tool_use_result) {
+                      const result = event.tool_use_result
+                      const output = result.stdout || result.content || ''
+                      if (output) {
+                        const truncated = output.length > 500 ? output.slice(0, 500) + '...' : output
+                        return `${truncated}\n`
+                      }
+                    }
+
+                    return null
+                  } catch {
+                    return null
+                  }
+                }
 
                 child.stdout?.on('data', (data: Buffer) => {
                   const text = data.toString()
                   outputBuffer += text
                   fs.appendFileSync(outputFile, text)
-                  // Keep last 800 chars as preview, full output for expanded view
-                  task.lastOutput = outputBuffer.slice(-800).trim()
-                  task.fullOutput = outputBuffer
+
+                  // Parse each line of JSON and format
+                  const lines = text.split('\n').filter(l => l.trim())
+                  for (const line of lines) {
+                    const formatted = formatStreamJson(line)
+                    if (formatted) {
+                      formattedOutput += formatted
+                    }
+                  }
+
+                  task.lastOutput = formattedOutput.slice(-800).trim()
+                  task.fullOutput = formattedOutput
                   broadcastTaskUpdate(task)
                 })
 
@@ -276,7 +331,8 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                   const text = data.toString()
                   outputBuffer += `[err] ${text}`
                   fs.appendFileSync(outputFile, `[stderr] ${text}`)
-                  task.fullOutput = outputBuffer
+                  formattedOutput += `[stderr] ${text}`
+                  task.fullOutput = formattedOutput
                   broadcastTaskUpdate(task)
                 })
 

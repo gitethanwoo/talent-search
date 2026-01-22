@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
+import TaskViewerPage from './components/TaskViewer'
 
 interface AgentTask {
   id: string
@@ -635,6 +636,13 @@ function ContactIcons({ p }: { p: Prospect }) {
 }
 
 function App() {
+  // Simple routing: /components shows the component preview page
+  const isComponentPage = window.location.pathname === '/components' || window.location.search.includes('view=components')
+
+  if (isComponentPage) {
+    return <TaskViewerPage />
+  }
+
   const [data, setData] = useState<Data | null>(null)
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
   const [loaded, setLoaded] = useState(false)
