@@ -2,6 +2,12 @@ import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 import TaskViewerPage from './components/TaskViewer'
 
+interface StreamEvent {
+  type: 'text' | 'tool_call' | 'tool_result'
+  tool?: string
+  content: string
+}
+
 interface AgentTask {
   id: string
   action: string
@@ -12,6 +18,7 @@ interface AgentTask {
   error?: string
   lastOutput?: string
   fullOutput?: string
+  events?: StreamEvent[]
 }
 
 interface Stats {
@@ -118,6 +125,25 @@ function StatCard({ value, label, accent }: { value: number; label: string; acce
 
 function DraftCard({ draft, index }: { draft: Draft; index: number }) {
   const [open, setOpen] = useState(false)
+  const [rewriting, setRewriting] = useState(false)
+
+  const handleRewrite = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    fetch('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'rewrite',
+        draftId: draft.id,
+        username: draft.github_username,
+        name: draft.name,
+        subject: draft.subject,
+        body: draft.body
+      })
+    })
+    setRewriting(true)
+    setTimeout(() => setRewriting(false), 3000)
+  }
 
   const contactButton = draft.email ? (
     <a
@@ -165,8 +191,21 @@ function DraftCard({ draft, index }: { draft: Draft; index: number }) {
       </div>
       <div className={`overflow-hidden transition-all duration-300 ${open ? 'max-h-[500px] opacity-100' : 'max-h-0 opacity-0'}`}>
         <div className="px-4 pb-4 pl-12">
-          <div className="font-mono text-[10px] text-zinc-600 mb-2 uppercase tracking-wider">
-            {draft.email || 'no email on file'}
+          <div className="flex items-center justify-between mb-2">
+            <div className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider">
+              {draft.email || 'no email on file'}
+            </div>
+            <button
+              onClick={handleRewrite}
+              disabled={rewriting}
+              className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 border transition-all ${
+                rewriting
+                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                  : 'text-zinc-500 border-zinc-700 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10'
+              }`}
+            >
+              {rewriting ? '↻ Rewriting...' : '↻ Rewrite'}
+            </button>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 p-4 font-mono text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed">
             {draft.body}
@@ -205,6 +244,75 @@ function ActionButton({ label, color, action }: { label: string; color: 'cyan' |
       {clicked ? '✓ Sent' : label}
     </button>
   )
+}
+
+function ToolBadge({ tool }: { tool: string }) {
+  const colors: Record<string, string> = {
+    Bash: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    WebFetch: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
+    WebSearch: 'bg-violet-500/20 text-violet-400 border-violet-500/30',
+    Read: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    Edit: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
+    Grep: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    TodoWrite: 'bg-fuchsia-500/20 text-fuchsia-400 border-fuchsia-500/30',
+  }
+  return (
+    <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border ${colors[tool] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30'}`}>
+      {tool}
+    </span>
+  )
+}
+
+function StreamEventView({ event }: { event: StreamEvent }) {
+  const [expanded, setExpanded] = useState(true)
+
+  if (event.type === 'text') {
+    return <div className="py-1.5 text-zinc-300 leading-relaxed text-sm">{event.content}</div>
+  }
+
+  if (event.type === 'tool_call') {
+    return (
+      <div className="py-1.5">
+        <div className="flex items-center gap-2">
+          <span className="text-zinc-600 text-xs">▶</span>
+          <ToolBadge tool={event.tool || 'Unknown'} />
+        </div>
+        <div className="ml-4 pl-3 border-l border-zinc-800 mt-1">
+          <pre className="font-mono text-xs text-zinc-500 whitespace-pre-wrap break-all">{event.content}</pre>
+        </div>
+      </div>
+    )
+  }
+
+  if (event.type === 'tool_result') {
+    const isLong = event.content.length > 300
+    return (
+      <div className="py-1 ml-4 pl-3 border-l border-zinc-800">
+        {isLong ? (
+          <div>
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="flex items-center gap-2 text-zinc-600 hover:text-zinc-400 transition-colors text-xs font-mono"
+            >
+              <span className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>▸</span>
+              <span>{expanded ? 'Hide' : 'Show'} ({event.content.length} chars)</span>
+            </button>
+            {expanded && (
+              <pre className="mt-1 p-2 bg-zinc-900/50 border border-zinc-800 font-mono text-xs text-zinc-400 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
+                {event.content}
+              </pre>
+            )}
+          </div>
+        ) : (
+          <pre className="p-2 bg-zinc-900/30 font-mono text-xs text-zinc-500 whitespace-pre-wrap break-all">
+            {event.content}
+          </pre>
+        )}
+      </div>
+    )
+  }
+
+  return null
 }
 
 type PanelMode = 'minimized' | 'normal' | 'expanded'
@@ -357,9 +465,20 @@ function TaskPanel() {
                   </div>
                 </div>
                 <div className="flex-1 overflow-auto p-4 bg-zinc-900/30">
-                  <pre className="font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed">
-                    {selectedTask.fullOutput || selectedTask.lastOutput || 'No output yet...'}
-                  </pre>
+                  {selectedTask.events && selectedTask.events.length > 0 ? (
+                    <div className="space-y-1">
+                      {selectedTask.events.map((event, i) => (
+                        <StreamEventView key={i} event={event} />
+                      ))}
+                      {selectedTask.status === 'running' && (
+                        <div className="flex items-center gap-2 py-2">
+                          <span className="inline-block w-2 h-4 bg-amber-400/80 animate-pulse" />
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-zinc-600 font-mono text-sm">No output yet...</div>
+                  )}
                 </div>
               </>
             ) : (
@@ -439,7 +558,7 @@ function TaskPanel() {
   )
 }
 
-function ProspectRow({ p, isExpanded, onToggle }: { p: Prospect; isExpanded: boolean; onToggle: () => void }) {
+function ProspectRow({ p, isExpanded, onToggle, hasDraft }: { p: Prospect; isExpanded: boolean; onToggle: () => void; hasDraft: boolean }) {
   const signalStyles = {
     high: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -489,7 +608,18 @@ function ProspectRow({ p, isExpanded, onToggle }: { p: Prospect; isExpanded: boo
           <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
         </td>
                 <td className="py-3 px-4">
-          <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border whitespace-nowrap ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
+          <div className="flex items-center gap-2">
+            <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border whitespace-nowrap ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
+            {hasDraft && (
+              <Tooltip text="Draft ready">
+                <span className="text-amber-400" title="Draft ready">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                  </svg>
+                </span>
+              </Tooltip>
+            )}
+          </div>
         </td>
         <td className="py-3 px-4 max-w-[140px]">
           <div className="flex items-center gap-2">
@@ -525,7 +655,7 @@ function ProspectRow({ p, isExpanded, onToggle }: { p: Prospect; isExpanded: boo
         <tr className={!contactable ? 'opacity-50' : ''}>
           <td colSpan={8} className="p-0">
             <div
-              className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}
+              className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}
             >
               <div className="px-4 py-4 pl-12 bg-zinc-900/30 border-t border-zinc-800/50">
                 <div className="grid grid-cols-2 gap-6">
@@ -810,6 +940,7 @@ function App() {
                       p={p}
                       isExpanded={expandedProspectId === p.id}
                       onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
+                      hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
                     />
                   ))}
                 </tbody>

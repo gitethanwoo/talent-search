@@ -53,6 +53,12 @@ function getDbData() {
   return data
 }
 
+interface StreamEvent {
+  type: 'text' | 'tool_call' | 'tool_result'
+  tool?: string
+  content: string
+}
+
 interface Task {
   id: string
   action: string
@@ -64,6 +70,7 @@ interface Task {
   outputFile?: string
   lastOutput?: string
   fullOutput?: string
+  events?: StreamEvent[]
 }
 
 // In-memory task store
@@ -170,6 +177,7 @@ function actionLoggerPlugin() {
                 enrich: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read'],
                 draft: ['Bash', 'Read', 'TodoWrite'],
                 reject: ['Bash'],
+                rewrite: ['Bash', 'Read'],
               }
 
               if (action.action === 'enrich') {
@@ -237,6 +245,36 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
    sqlite3 prospects.db "DELETE FROM prospects WHERE github_username='${action.username}'"
 
 4. Confirm the rejection was successful.`
+              } else if (action.action === 'rewrite') {
+                prompt = `/prospect-outreach
+
+Rewrite this outreach email for @${action.username} (${action.name || 'unknown'}).
+
+CURRENT DRAFT (ID: ${action.draftId}):
+Subject: ${action.subject}
+Body:
+${action.body}
+
+INSTRUCTIONS:
+1. First, get the prospect's full context:
+   sqlite3 -header -column prospects.db "SELECT * FROM prospects WHERE github_username='${action.username}'"
+
+2. Read the outreach skill for tone and template guidelines.
+
+3. Write a BETTER version of this email:
+   - Keep the same general intent but make it more compelling
+   - Reference their specific work more naturally
+   - Make it sound more human, less templated
+   - Keep it under 100 words
+   - Use Alex Lieberman's voice (direct, confident, not salesy)
+
+4. Update the existing draft in the database:
+   sqlite3 prospects.db "UPDATE outreach_messages SET
+     subject='{new_subject}',
+     body='{new_body}'
+   WHERE id=${action.draftId}"
+
+5. Confirm what you changed and why.`
               }
 
               if (prompt) {
@@ -275,20 +313,20 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                 })
 
                 let outputBuffer = ''
-                let formattedOutput = ''
+                const events: StreamEvent[] = []
 
-                function formatStreamJson(line: string): string | null {
+                function parseStreamJson(line: string): StreamEvent | null {
                   try {
                     const event = JSON.parse(line)
 
                     if (event.type === 'assistant' && event.message?.content) {
                       for (const block of event.message.content) {
                         if (block.type === 'text' && block.text) {
-                          return block.text
+                          return { type: 'text', content: block.text }
                         }
                         if (block.type === 'tool_use') {
-                          const input = block.input?.command || block.input?.pattern || block.input?.file_path || JSON.stringify(block.input).slice(0, 100)
-                          return `\n▶ ${block.name}: ${input}\n`
+                          const input = block.input?.command || block.input?.url || block.input?.pattern || block.input?.file_path || block.input?.query || JSON.stringify(block.input).slice(0, 200)
+                          return { type: 'tool_call', tool: block.name, content: input }
                         }
                       }
                     }
@@ -296,9 +334,8 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                     if (event.type === 'user' && event.tool_use_result) {
                       const result = event.tool_use_result
                       const output = result.stdout || result.content || ''
-                      if (output) {
-                        const truncated = output.length > 500 ? output.slice(0, 500) + '...' : output
-                        return `${truncated}\n`
+                      if (output && output.trim()) {
+                        return { type: 'tool_result', content: output }
                       }
                     }
 
@@ -313,17 +350,22 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                   outputBuffer += text
                   fs.appendFileSync(outputFile, text)
 
-                  // Parse each line of JSON and format
+                  // Parse each line of JSON into structured events
                   const lines = text.split('\n').filter(l => l.trim())
                   for (const line of lines) {
-                    const formatted = formatStreamJson(line)
-                    if (formatted) {
-                      formattedOutput += formatted
+                    const event = parseStreamJson(line)
+                    if (event) {
+                      events.push(event)
                     }
                   }
 
-                  task.lastOutput = formattedOutput.slice(-800).trim()
-                  task.fullOutput = formattedOutput
+                  task.events = events
+                  // Keep text summary for lastOutput
+                  task.lastOutput = events.slice(-5).map(e =>
+                    e.type === 'text' ? e.content :
+                    e.type === 'tool_call' ? `▶ ${e.tool}: ${e.content.slice(0, 50)}...` :
+                    e.content.slice(0, 100)
+                  ).join('\n')
                   broadcastTaskUpdate(task)
                 })
 
@@ -331,8 +373,8 @@ Draft a personalized outreach message for @${action.username} (${action.name || 
                   const text = data.toString()
                   outputBuffer += `[err] ${text}`
                   fs.appendFileSync(outputFile, `[stderr] ${text}`)
-                  formattedOutput += `[stderr] ${text}`
-                  task.fullOutput = formattedOutput
+                  events.push({ type: 'text', content: `[stderr] ${text}` })
+                  task.events = events
                   broadcastTaskUpdate(task)
                 })
 
