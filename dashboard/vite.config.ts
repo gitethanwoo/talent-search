@@ -1,7 +1,320 @@
 import { defineConfig } from 'vite'
+import type { ViteDevServer } from 'vite'
+import type { IncomingMessage, ServerResponse } from 'http'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
+import fs from 'fs'
+import path from 'path'
+import { spawn } from 'child_process'
+import Database from 'better-sqlite3'
+
+// SQLite database path
+const DB_PATH = path.resolve(__dirname, '../prospects.db')
+
+function getDbData() {
+  const db = new Database(DB_PATH, { readonly: true })
+
+  const scalar = (sql: string) => (db.prepare(sql).get() as Record<string, number>)[Object.keys(db.prepare(sql).get() as object)[0]]
+  const query = (sql: string) => db.prepare(sql).all()
+
+  const data = {
+    stats: {
+      prospects: scalar("SELECT COUNT(*) FROM prospects"),
+      contactable: scalar("SELECT COUNT(*) FROM prospects WHERE email IS NOT NULL OR twitter IS NOT NULL"),
+      high_signal: scalar("SELECT COUNT(*) FROM prospects WHERE signal='high'"),
+      ships_fast: scalar("SELECT COUNT(*) FROM prospects WHERE ships_fast=1"),
+      ai_native: scalar("SELECT COUNT(*) FROM prospects WHERE ai_native=1"),
+      sources: scalar("SELECT COUNT(*) FROM sources_checked"),
+      rejected: scalar("SELECT COUNT(*) FROM rejected"),
+    },
+    prospects: query(`
+      SELECT id, github_username, name, email, twitter, location, company,
+             signal, ships_fast, ai_native, source, outreach_status,
+             notes, comp_fit, outreach_context, bio
+      FROM prospects
+      ORDER BY CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+               ships_fast DESC
+    `),
+    drafts: query(`
+      SELECT m.id, p.github_username, p.name, p.email, p.twitter,
+             m.subject, m.body, m.channel, m.status, m.created_at
+      FROM outreach_messages m
+      JOIN prospects p ON p.id = m.prospect_id
+      ORDER BY m.created_at DESC
+    `),
+    sources: query(`
+      SELECT source_type, source_name, checked_at
+      FROM sources_checked
+      ORDER BY checked_at DESC
+    `),
+  }
+
+  db.close()
+  return data
+}
+
+interface Task {
+  id: string
+  action: string
+  target: string
+  status: 'running' | 'done' | 'error'
+  startedAt: string
+  completedAt?: string
+  error?: string
+  outputFile?: string
+  lastOutput?: string
+  fullOutput?: string
+}
+
+// In-memory task store
+const tasks: Map<string, Task> = new Map()
+let taskCounter = 0
+
+// SSE clients for streaming updates
+const sseClients: Set<ServerResponse> = new Set()
+
+function broadcastTaskUpdate(task: Task) {
+  const data = JSON.stringify(task)
+  sseClients.forEach(client => {
+    client.write(`data: ${data}\n\n`)
+  })
+}
+
+// Plugin to handle action logging from the UI and trigger Claude
+function actionLoggerPlugin() {
+  const logFile = path.resolve(__dirname, '../actions.log')
+
+  return {
+    name: 'action-logger',
+    configureServer(server: ViteDevServer) {
+      // Live data from SQLite
+      server.middlewares.use('/api/data', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          try {
+            const data = getDbData()
+            res.writeHead(200, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify(data))
+          } catch (e) {
+            console.error('[DB ERROR]', e)
+            res.writeHead(500, { 'Content-Type': 'application/json' })
+            res.end(JSON.stringify({ error: 'Database error' }))
+          }
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // SSE endpoint for streaming task updates
+      server.middlewares.use('/api/tasks/stream', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+          })
+
+          // Send initial state
+          const taskList = Array.from(tasks.values()).sort((a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+          )
+          res.write(`event: init\ndata: ${JSON.stringify(taskList)}\n\n`)
+
+          sseClients.add(res)
+          console.log('\x1b[35m[SSE]\x1b[0m Client connected, total:', sseClients.size)
+
+          req.on('close', () => {
+            sseClients.delete(res)
+            console.log('\x1b[35m[SSE]\x1b[0m Client disconnected, total:', sseClients.size)
+          })
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Get all tasks (fallback for non-streaming)
+      server.middlewares.use('/api/tasks', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          const taskList = Array.from(tasks.values()).sort((a, b) =>
+            new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+          )
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(taskList))
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Submit new action
+      server.middlewares.use('/api/action', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (chunk: Buffer) => body += chunk.toString())
+          req.on('end', () => {
+            const timestamp = new Date().toISOString()
+            const logLine = `[${timestamp}] ${body}\n`
+            fs.appendFileSync(logFile, logLine)
+            console.log('\x1b[36m[ACTION]\x1b[0m', body)
+
+            // Parse action and trigger Claude
+            try {
+              const action = JSON.parse(body)
+              let prompt = ''
+              let taskAction = action.action
+
+              if (action.action === 'enrich') {
+                prompt = `/prospect-enricher
+
+Enrich the prospect @${action.username} (${action.name || 'unknown'}).
+
+1. First get their current data:
+   sqlite3 -header -column prospects.db "SELECT * FROM prospects WHERE github_username='${action.username}'"
+
+2. Work through the enrichment checklist to find:
+   - Email (check GitHub, commits, website, Google)
+   - Twitter handle
+   - LinkedIn URL
+   - Personal website/blog
+   - Verify current role/company
+   - Evidence for ships_fast and ai_native
+   - comp_fit reasoning
+   - outreach_context (personalization hooks)
+
+3. Update the database with findings:
+   sqlite3 prospects.db "UPDATE prospects SET
+     email=COALESCE('{email}', email),
+     twitter=COALESCE('{twitter}', twitter),
+     ...
+     enriched_at=datetime('now')
+   WHERE github_username='${action.username}'"
+
+Be thorough - check every source. Update the DB when done.`
+              } else if (action.action === 'draft') {
+                prompt = `/prospect-outreach
+
+Draft a personalized outreach message for @${action.username} (${action.name || 'unknown'}).
+
+1. First get their enrichment data:
+   sqlite3 -header -column prospects.db "SELECT * FROM prospects WHERE github_username='${action.username}'"
+
+2. Read the outreach skill for templates and tone guidelines.
+
+3. Write a personalized email:
+   - Subject must reference their SPECIFIC work
+   - Body must mention the signal that flagged them
+   - Use Alex Lieberman's voice (direct, confident)
+   - Under 100 words
+   - Include video link placeholder
+
+4. Save the draft to database:
+   sqlite3 prospects.db "INSERT INTO outreach_messages (prospect_id, channel, message_type, subject, body, status)
+   VALUES ((SELECT id FROM prospects WHERE github_username='${action.username}'), 'email', 'initial', '{subject}', '{body}', 'draft')"
+
+5. Update prospect status:
+   sqlite3 prospects.db "UPDATE prospects SET outreach_status='in_progress' WHERE github_username='${action.username}'"`
+              } else if (action.action === 'reject') {
+                prompt = `Reject prospect @${action.username} from the pipeline.
+
+1. First get their data:
+   sqlite3 prospects.db "SELECT * FROM prospects WHERE github_username='${action.username}'"
+
+2. Move to rejected table:
+   sqlite3 prospects.db "INSERT INTO rejected (github_username, name, reason, rejected_at)
+   SELECT github_username, name, 'Manually rejected from dashboard', datetime('now')
+   FROM prospects WHERE github_username='${action.username}'"
+
+3. Delete from prospects:
+   sqlite3 prospects.db "DELETE FROM prospects WHERE github_username='${action.username}'"
+
+4. Confirm the rejection was successful.`
+              }
+
+              if (prompt) {
+                // Create task
+                const taskId = `task-${++taskCounter}`
+                const outputFile = path.resolve(__dirname, `../task-outputs/${taskId}.log`)
+
+                // Ensure output directory exists
+                fs.mkdirSync(path.dirname(outputFile), { recursive: true })
+
+                const task: Task = {
+                  id: taskId,
+                  action: taskAction,
+                  target: action.username,
+                  status: 'running',
+                  startedAt: timestamp,
+                  outputFile,
+                  fullOutput: ''
+                }
+                tasks.set(taskId, task)
+                broadcastTaskUpdate(task)
+
+                console.log('\x1b[33m[EXEC]\x1b[0m', `[${taskId}]`, `claude -p "${prompt}"`)
+
+                // Spawn with text output, skip permissions for headless operation
+                const child = spawn('claude', ['-p', prompt, '--dangerously-skip-permissions'], {
+                  cwd: path.resolve(__dirname, '..'),
+                  stdio: ['ignore', 'pipe', 'pipe']
+                })
+
+                let outputBuffer = ''
+
+                child.stdout?.on('data', (data: Buffer) => {
+                  const text = data.toString()
+                  outputBuffer += text
+                  fs.appendFileSync(outputFile, text)
+                  // Keep last 800 chars as preview, full output for expanded view
+                  task.lastOutput = outputBuffer.slice(-800).trim()
+                  task.fullOutput = outputBuffer
+                  broadcastTaskUpdate(task)
+                })
+
+                child.stderr?.on('data', (data: Buffer) => {
+                  const text = data.toString()
+                  outputBuffer += `[err] ${text}`
+                  fs.appendFileSync(outputFile, `[stderr] ${text}`)
+                  task.fullOutput = outputBuffer
+                  broadcastTaskUpdate(task)
+                })
+
+                child.on('close', (code) => {
+                  const completedAt = new Date().toISOString()
+                  if (code !== 0) {
+                    console.error(`[${taskId}] ERROR: exit code ${code}`)
+                    task.status = 'error'
+                    task.error = `Exit code ${code}`
+                  } else {
+                    console.log(`\x1b[32m[${taskId}] DONE\x1b[0m`)
+                    task.status = 'done'
+                  }
+                  task.completedAt = completedAt
+                  broadcastTaskUpdate(task)
+                })
+
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, taskId }))
+              } else {
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+              }
+            } catch (e) {
+              console.error('[PARSE ERROR]', e)
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Parse error' }))
+            }
+          })
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+    }
+  }
+}
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [react(), tailwindcss(), actionLoggerPlugin()],
 })

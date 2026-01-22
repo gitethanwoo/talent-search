@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react'
 import type { ReactNode } from 'react'
 
+interface AgentTask {
+  id: string
+  action: string
+  target: string
+  status: 'running' | 'done' | 'error'
+  startedAt: string
+  completedAt?: string
+  error?: string
+  lastOutput?: string
+  fullOutput?: string
+}
+
 interface Stats {
   prospects: number
   high_signal: number
@@ -164,7 +176,269 @@ function DraftCard({ draft, index }: { draft: Draft; index: number }) {
   )
 }
 
-function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: number; isExpanded: boolean; onToggle: () => void }) {
+function ActionButton({ label, color, action }: { label: string; color: 'cyan' | 'emerald' | 'red'; action: object }) {
+  const [clicked, setClicked] = useState(false)
+
+  const colorStyles = {
+    cyan: 'border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 active:bg-cyan-500/40',
+    emerald: 'border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 active:bg-emerald-500/40',
+    red: 'border-red-500/30 text-red-400 hover:bg-red-500/20 active:bg-red-500/40'
+  }
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    fetch('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(action)
+    })
+    setClicked(true)
+    setTimeout(() => setClicked(false), 1500)
+  }
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`font-mono text-[9px] uppercase tracking-wider px-2 py-1 border transition-all duration-150 active:scale-95 ${colorStyles[color]} ${clicked ? 'bg-white/10' : ''}`}
+    >
+      {clicked ? '✓ Sent' : label}
+    </button>
+  )
+}
+
+type PanelMode = 'minimized' | 'normal' | 'expanded'
+
+function TaskPanel() {
+  const [tasks, setTasks] = useState<AgentTask[]>([])
+  const [mode, setMode] = useState<PanelMode>('normal')
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
+  const [connected, setConnected] = useState(false)
+
+  // Use SSE for real-time streaming updates
+  useEffect(() => {
+    const eventSource = new EventSource('/api/tasks/stream')
+
+    eventSource.addEventListener('init', (e) => {
+      const taskList = JSON.parse(e.data)
+      setTasks(taskList)
+      setConnected(true)
+    })
+
+    eventSource.onmessage = (e) => {
+      const updatedTask = JSON.parse(e.data) as AgentTask
+      setTasks(prev => {
+        const existing = prev.find(t => t.id === updatedTask.id)
+        if (existing) {
+          return prev.map(t => t.id === updatedTask.id ? updatedTask : t)
+        } else {
+          return [updatedTask, ...prev]
+        }
+      })
+    }
+
+    eventSource.onerror = () => {
+      setConnected(false)
+    }
+
+    return () => eventSource.close()
+  }, [])
+
+  const runningCount = tasks.filter(t => t.status === 'running').length
+  const recentTasks = tasks.slice(0, 20)
+  const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
+
+  // Auto-select first running task if none selected
+  useEffect(() => {
+    if (!selectedTaskId && runningCount > 0) {
+      const firstRunning = tasks.find(t => t.status === 'running')
+      if (firstRunning) setSelectedTaskId(firstRunning.id)
+    }
+  }, [tasks, selectedTaskId, runningCount])
+
+  if (tasks.length === 0) return null
+
+  // Minimized: just a small bar
+  if (mode === 'minimized') {
+    return (
+      <div
+        className="fixed bottom-4 right-4 bg-zinc-950 border border-zinc-800 shadow-2xl z-50 cursor-pointer hover:bg-zinc-900/50 transition-colors"
+        onClick={() => setMode('normal')}
+      >
+        <div className="flex items-center gap-3 px-4 py-2">
+          <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Tasks</span>
+          {runningCount > 0 && (
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+              <span className="font-mono text-xs text-amber-400">{runningCount}</span>
+            </span>
+          )}
+          {!connected && <span className="w-2 h-2 bg-red-400 rounded-full" title="Disconnected" />}
+        </div>
+      </div>
+    )
+  }
+
+  // Expanded: takes most of the screen
+  if (mode === 'expanded') {
+    return (
+      <div className="fixed inset-4 bg-zinc-950 border border-zinc-800 shadow-2xl z-50 flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 flex-shrink-0">
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Agent Tasks</span>
+            {runningCount > 0 && (
+              <span className="flex items-center gap-2">
+                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+                <span className="font-mono text-xs text-amber-400">{runningCount} running</span>
+              </span>
+            )}
+            {!connected && <span className="text-xs text-red-400">(reconnecting...)</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setMode('normal')}
+              className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
+              title="Restore"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+              </svg>
+            </button>
+            <button
+              onClick={() => setMode('minimized')}
+              className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
+              title="Minimize"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+                <path fillRule="evenodd" d="M14.707 12.707a1 1 0 01-1.414 0L10 9.414l-3.293 3.293a1 1 0 01-1.414-1.414l4-4a1 1 0 011.414 0l4 4a1 1 0 010 1.414z" clipRule="evenodd" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Split view: task list on left, output on right */}
+        <div className="flex flex-1 min-h-0">
+          {/* Task list */}
+          <div className="w-80 border-r border-zinc-800 overflow-y-auto flex-shrink-0">
+            {recentTasks.map(task => (
+              <div
+                key={task.id}
+                className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-colors ${
+                  selectedTaskId === task.id ? 'bg-zinc-800/50' : 'hover:bg-zinc-900/50'
+                }`}
+                onClick={() => setSelectedTaskId(task.id)}
+              >
+                <div className="flex items-center gap-2">
+                  {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />}
+                  {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />}
+                  {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />}
+                  <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                  <span className="font-mono text-sm text-zinc-300 truncate">@{task.target}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Output panel */}
+          <div className="flex-1 flex flex-col min-w-0">
+            {selectedTask ? (
+              <>
+                <div className="px-4 py-2 border-b border-zinc-800 flex-shrink-0">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono text-sm text-zinc-300">{selectedTask.action}</span>
+                      <span className="text-zinc-600">→</span>
+                      <span className="font-mono text-sm text-zinc-400">@{selectedTask.target}</span>
+                    </div>
+                    <span className="font-mono text-[10px] text-zinc-600">
+                      {selectedTask.status === 'running' ? 'running...' : selectedTask.status}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex-1 overflow-auto p-4 bg-zinc-900/30">
+                  <pre className="font-mono text-sm text-zinc-300 whitespace-pre-wrap break-words leading-relaxed">
+                    {selectedTask.fullOutput || selectedTask.lastOutput || 'No output yet...'}
+                  </pre>
+                </div>
+              </>
+            ) : (
+              <div className="flex-1 flex items-center justify-center text-zinc-600 font-mono text-sm">
+                Select a task to view output
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // Normal mode: bottom-right panel
+  return (
+    <div className="fixed bottom-4 right-4 w-[500px] bg-zinc-950 border border-zinc-800 shadow-2xl z-50">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
+        <div className="flex items-center gap-3">
+          <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Agent Tasks</span>
+          {runningCount > 0 && (
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
+              <span className="font-mono text-xs text-amber-400">{runningCount} running</span>
+            </span>
+          )}
+          {!connected && <span className="text-xs text-red-400">(reconnecting...)</span>}
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            onClick={() => setMode('expanded')}
+            className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
+            title="Expand"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 01-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 011.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 011.414-1.414L15 13.586V12a1 1 0 011-1z" clipRule="evenodd" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setMode('minimized')}
+            className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
+            title="Minimize"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4" viewBox="0 0 20 20" fill="currentColor">
+              <path fillRule="evenodd" d="M5 10a1 1 0 011-1h8a1 1 0 110 2H6a1 1 0 01-1-1z" clipRule="evenodd" />
+            </svg>
+          </button>
+        </div>
+      </div>
+      <div className="max-h-[400px] overflow-y-auto">
+        {recentTasks.slice(0, 10).map(task => (
+          <div
+            key={task.id}
+            className="px-4 py-3 border-b border-zinc-900 last:border-0 cursor-pointer hover:bg-zinc-900/30"
+            onClick={() => { setSelectedTaskId(task.id); setMode('expanded') }}
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />}
+                {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full" />}
+                {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full" />}
+                <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                <span className="font-mono text-sm text-zinc-300">@{task.target}</span>
+              </div>
+              <span className="font-mono text-[10px] text-zinc-600">
+                {task.status === 'running' ? 'running...' : task.status}
+              </span>
+            </div>
+            {task.lastOutput && (
+              <div className="mt-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded">
+                <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap break-words leading-relaxed line-clamp-4">{task.lastOutput}</pre>
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ProspectRow({ p, isExpanded, onToggle }: { p: Prospect; isExpanded: boolean; onToggle: () => void }) {
   const signalStyles = {
     high: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -191,7 +465,6 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
         className={`border-t border-zinc-900 hover:bg-zinc-900/50 transition-colors group cursor-pointer ${isExpanded ? 'bg-zinc-900/50' : ''} ${!contactable ? 'opacity-50' : ''}`}
         onClick={onToggle}
       >
-        <td className="py-3 px-4 font-mono text-zinc-700 text-xs">{(index + 1).toString().padStart(2, '0')}</td>
         <td className="py-3 px-4">
           <a
             href={`https://github.com/${p.github_username}`}
@@ -214,35 +487,42 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
         <td className="py-3 px-4">
           <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
         </td>
-        <td className="py-3 px-4 text-center">
-          {p.ships_fast ? (
-            <Tooltip text="Ships Fast - high commit velocity">
-              <span className="text-blue-400">⚡</span>
-            </Tooltip>
-          ) : <span className="text-zinc-800">○</span>}
+                <td className="py-3 px-4">
+          <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border whitespace-nowrap ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
         </td>
-        <td className="py-3 px-4 text-center">
-          {p.ai_native ? (
-            <Tooltip text="AI Native - works with AI tools">
-              <span className="text-violet-400">🤖</span>
-            </Tooltip>
-          ) : <span className="text-zinc-800">○</span>}
-        </td>
-        <td className="py-3 px-4">
-          <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
-        </td>
-        <td className="py-3 px-4">
+        <td className="py-3 px-4 max-w-[140px]">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider">{p.source || '—'}</span>
+            <Tooltip text={p.source || ''}>
+              <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider truncate block max-w-[120px]">{p.source || '—'}</span>
+            </Tooltip>
             {hasDetails && (
-              <span className={`font-mono text-zinc-600 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
+              <span className={`font-mono text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
             )}
+          </div>
+        </td>
+        <td className="py-3 px-4">
+          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <ActionButton
+              label="Enrich"
+              color="cyan"
+              action={{ action: 'enrich', username: p.github_username, name: p.name }}
+            />
+            <ActionButton
+              label="Draft"
+              color="emerald"
+              action={{ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter }}
+            />
+            <ActionButton
+              label="Reject"
+              color="red"
+              action={{ action: 'reject', username: p.github_username, name: p.name }}
+            />
           </div>
         </td>
       </tr>
       {hasDetails && (
         <tr className={!contactable ? 'opacity-50' : ''}>
-          <td colSpan={10} className="p-0">
+          <td colSpan={8} className="p-0">
             <div
               className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}
             >
@@ -362,14 +642,21 @@ function App() {
   const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
   const [contactableOnly, setContactableOnly] = useState(false)
 
-  useEffect(() => {
-    fetch('/data.json')
+  const fetchData = () => {
+    fetch('/api/data')
       .then(r => r.json())
       .then(d => {
         setData(d)
         setTimeout(() => setLoaded(true), 100)
       })
       .catch(console.error)
+  }
+
+  useEffect(() => {
+    fetchData()
+    // Refresh data every 5 seconds for live updates
+    const interval = setInterval(fetchData, 5000)
+    return () => clearInterval(interval)
   }, [])
 
   // Compute outreach filter counts
@@ -402,6 +689,7 @@ function App() {
 
   return (
     <div className={`min-h-screen bg-zinc-950 transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
+      <TaskPanel />
       {/* Subtle grid background */}
       <div className="fixed inset-0 opacity-[0.02]" style={{
         backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
@@ -497,28 +785,21 @@ function App() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-12">#</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Handle</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Name</th>
                     <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Contact</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
-                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                      <Tooltip text="Ships Fast - high commit velocity">⚡</Tooltip>
-                    </th>
-                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
-                      <Tooltip text="AI Native - works with AI tools">🤖</Tooltip>
-                    </th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Source</th>
+                                        <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
+                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 max-w-[140px]">Source</th>
+                    <th className="text-right py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-[180px]">Actions</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredProspects.map((p, i) => (
+                  {filteredProspects.map((p) => (
                     <ProspectRow
                       key={p.id}
                       p={p}
-                      index={i}
                       isExpanded={expandedProspectId === p.id}
                       onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
                     />
