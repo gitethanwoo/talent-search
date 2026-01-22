@@ -112,41 +112,56 @@ function App() {
   }
   const currentBulkAction = bulkActionForStage[pipelineStage]
 
-  // Bulk action handlers
-  const handleBulkEnrich = () => {
+  // Bulk action handlers - process in batches of 10
+  const BATCH_SIZE = 10
+  const BATCH_DELAY_MS = 500
+
+  const processBatch = async (
+    prospects: Prospect[],
+    action: (p: Prospect) => Promise<void>
+  ) => {
+    for (let i = 0; i < prospects.length; i += BATCH_SIZE) {
+      const batch = prospects.slice(i, i + BATCH_SIZE)
+      await Promise.all(batch.map(action))
+      if (i + BATCH_SIZE < prospects.length) {
+        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+      }
+    }
+  }
+
+  const handleBulkEnrich = async () => {
     const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
-    prospects.forEach(p => {
-      fetch('/api/action', {
+    setCheckedIds(new Set())
+    setBulkMode(false)
+
+    await processBatch(prospects, async (p) => {
+      await fetch('/api/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'enrich', username: p.github_username, name: p.name })
       })
     })
-    setCheckedIds(new Set())
-    setBulkMode(false)
   }
 
-  const handleBulkDraft = () => {
+  const handleBulkDraft = async () => {
     const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
-    prospects.forEach(p => {
-      fetch('/api/action', {
+    setCheckedIds(new Set())
+    setBulkMode(false)
+
+    await processBatch(prospects, async (p) => {
+      await fetch('/api/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter })
       })
     })
-    setCheckedIds(new Set())
-    setBulkMode(false)
   }
-
-  const MAX_BULK_SELECT = 10
 
   const handleSelectAll = () => {
     if (checkedIds.size > 0) {
       setCheckedIds(new Set())
     } else {
-      // Select up to MAX_BULK_SELECT
-      setCheckedIds(new Set(filteredProspects.slice(0, MAX_BULK_SELECT).map(p => p.id)))
+      setCheckedIds(new Set(filteredProspects.map(p => p.id)))
     }
   }
 
@@ -290,10 +305,10 @@ function App() {
                       onClick={handleSelectAll}
                       className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
                     >
-                      Clear
+                      {checkedIds.size === filteredProspects.length ? 'Clear All' : 'Select All'}
                     </button>
                     <span className="font-mono text-[10px] text-zinc-600">
-                      {checkedIds.size}/{MAX_BULK_SELECT} selected
+                      {checkedIds.size} selected
                     </span>
                   </div>
                   {currentBulkAction === 'enrich' && (
@@ -317,14 +332,13 @@ function App() {
 
               {/* Select prompt when in bulk mode but none selected */}
               {bulkMode && currentBulkAction && checkedIds.size === 0 && (
-                <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0 flex items-center justify-between">
+                <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0">
                   <button
                     onClick={handleSelectAll}
                     className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
                   >
-                    Select First {Math.min(MAX_BULK_SELECT, filteredProspects.length)}
+                    Select All ({filteredProspects.length})
                   </button>
-                  <span className="font-mono text-[10px] text-zinc-700">max {MAX_BULK_SELECT}</span>
                 </div>
               )}
 
@@ -339,11 +353,8 @@ function App() {
                     onClick={() => setSelectedProspectId(p.id)}
                     onCheck={(checked) => {
                       const newSet = new Set(checkedIds)
-                      if (checked && newSet.size < MAX_BULK_SELECT) {
-                        newSet.add(p.id)
-                      } else if (!checked) {
-                        newSet.delete(p.id)
-                      }
+                      if (checked) newSet.add(p.id)
+                      else newSet.delete(p.id)
                       setCheckedIds(newSet)
                     }}
                     hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
