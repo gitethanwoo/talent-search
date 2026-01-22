@@ -58,22 +58,55 @@ ORDER BY m.sent_at"
 
 ---
 
+## TeneX Context
+
+**Read [references/tenex-pitch.md](references/tenex-pitch.md) for full pitch details, objection handling, and hooks.**
+
+### Quick Summary
+
+TeneX = AI-powered dev agency, but different:
+- Hire the best (not cheap talent)
+- Charge clients on outcomes (story points)
+- Pay engineers on outcomes (story points = $, uncapped)
+- $250K-$800K+ based on output
+- In-office NYC, intense culture ("Navy SEALs")
+
+**The hooks (pick based on prospect):**
+- **Frustrated by slow companies** → outcomes-based, no bureaucracy
+- **Underpaid relative to output** → story points = dollars, meritocracy
+- **Tired of carrying mediocre teammates** → we only hire the best
+- **Bored of one product** → diverse clients, different problems
+- **AI-native** → everyone uses AI tools, build custom automations
+- **High performers wanting ownership** → your ceiling = your output
+
+---
+
 ## Message Generation
 
-### The TeneX Pitch
+### How to Generate a Message
 
-**What we offer:**
-- Uncapped performance-based pay (story points = dollars)
-- "Make $1M/year if you're insane"
-- Small, efficient team shipping fast
-- AI-native workflows (Claude, Cursor, etc.)
-- Ownership and autonomy
+1. **Read prospect's enrichment data:**
+   - `outreach_context` - the hook, timing notes
+   - `portfolio` - what they've built
+   - `comp_fit` - why uncapped pay appeals to them
 
-**Who we want:**
-- Ships fast, high velocity
-- AI-native (uses modern tools)
-- Wants to control their destiny
-- Not looking for corporate comfort
+2. **Pick the strongest hook from their context:**
+   - What specific project/tweet/post to reference?
+   - Which TeneX hook fits them? (variety? meritocracy? elite peers? AI-native?)
+   - What's their likely objection? (intensity? NYC? too good to be true?)
+
+3. **Draft using structure:**
+   - Line 1: Specific reference to their work + genuine reaction
+   - Line 2-3: The pitch (tailored hook, not generic)
+   - Line 4: Why them specifically
+   - Line 5: Soft CTA
+
+4. **Self-check before saving:**
+   - [ ] Is there a SPECIFIC reference? (project name, not "your work")
+   - [ ] Is the hook tailored to them? (not just "uncapped pay")
+   - [ ] Under 100 words?
+   - [ ] Sounds human, not templated?
+   - [ ] Would YOU reply to this?
 
 ### Tone by Channel
 
@@ -93,63 +126,87 @@ Every message MUST include:
 
 ### Message Templates
 
-**Email - Initial:**
+**Email - Initial (adapt based on their hook):**
 ```
-Subject: [Their project] + an unusual opportunity
+Subject: [Their project] + something different
 
 Hey [First name],
 
-Saw [specific project/tweet/post] - [genuine 1-line reaction].
+[Specific project/tweet] caught my eye - [genuine 1-line reaction].
 
-I'm hiring for TeneX. Unusual model: uncapped performance pay.
-Story points closed = dollars earned. Best engineers here will clear $500K+.
+Building TeneX: AI dev agency where engineers get paid on output.
+Story points = dollars, uncapped. Best people here clear $500K+.
+[Insert tailored hook: variety of problems / elite peers / AI-native culture / meritocracy]
 
-Looking for people who ship fast and want to own their output.
-Based on [specific signal], seems like that might be you.
+[Why them specifically based on signals].
 
 Worth a quick chat?
-
-[Your name]
 ```
 
 **Twitter DM - Initial:**
 ```
-Hey - saw [project/tweet]. [1-line genuine reaction].
+[Project/tweet] is sick. [1-line genuine reaction].
 
-Building something at TeneX with uncapped performance pay
-(story points = $). Looking for fast shippers.
-
-Open to hearing more?
+Hiring at TeneX - AI dev agency, uncapped comp based on output.
+[One tailored hook]. Open to hearing more?
 ```
 
 **Email - Follow-up 1 (3 days):**
 ```
 Subject: Re: [original subject]
 
-Hey [First name],
-
 Floating this back up. Know you're busy shipping.
 
-The offer: work with a small team, AI-native stack,
-and get paid directly for output. No politics, no ceiling.
+Quick version: diverse client problems, AI-native team,
+paid directly for output. No politics, no ceiling.
 
-If timing's wrong, no worries. But if you're curious,
-happy to share more about what we're building.
-
-[Your name]
+If timing's off, no worries. But if you're curious
+what uncapped actually looks like, happy to share.
 ```
 
 **Email - Follow-up 2 (7 days):**
 ```
 Subject: Re: [original subject]
 
-Last ping, promise.
+Last ping.
 
-If [company/project they're working on] has you locked in,
-totally get it. But if you ever want to talk about
-what "uncapped" actually looks like in practice, door's open.
+If [their current thing] has you locked in, totally get it.
+But if you ever want to work with people at your level
+and get paid for what you actually ship - door's open.
+```
 
-[Your name]
+### Example Messages (for reference)
+
+**For an AI-native builder (hook: elite peers + AI-native):**
+```
+Subject: claude-flow + something different
+
+Hey rUv,
+
+claude-flow is impressive - 163 repos and you're building the orchestration
+layer everyone needs. Clearly shipping faster than most teams.
+
+Building TeneX: AI dev agency where everyone uses Claude/Cursor daily.
+Comp is uncapped, based on story points. Best engineers clear $500K+.
+You'd be working alongside people who actually get AI-native workflows.
+
+Seems like you'd fit. Worth a chat?
+```
+
+**For someone bored of one product (hook: variety):**
+```
+Subject: quick question
+
+Hey [name],
+
+Saw you've been at [company] for 3 years on [product].
+Impressive depth, but wondering if you ever miss variety.
+
+TeneX: different clients, different problems every few months.
+Startups, market leaders, AI products. Paid on output, uncapped.
+
+If you're happy where you are, ignore this. But if you want
+diverse problems with elite engineers - let's talk.
 ```
 
 ---
