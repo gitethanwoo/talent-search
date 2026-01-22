@@ -119,95 +119,80 @@ TeneX = AI-powered dev agency, but different:
 ### Personalization Requirements
 
 Every message MUST include:
-1. **Specific reference** to their work (project name, tweet, blog post)
-2. **Why them** - what signals made us reach out
-3. **The hook** - uncapped pay, ship fast, AI-native
-4. **Soft CTA** - "worth a conversation?" not "apply now"
+1. **The specific signal** that flagged them (from enrichment data)
+2. **Link to video** for more info
+3. **Clear next step** - "let me know if you'd like to talk"
 
-### Message Templates
+### The Approach: Radical Transparency
 
-**Email - Initial (adapt based on their hook):**
+**Don't:**
+- Pretend you used their project ("been using claude-flow daily!")
+- Fake familiarity or warmth
+- Use AI-tell words: "impressive", "clearly", "elegant"
+- Write in staccato (every sentence its own paragraph)
+- Try to sound casual ("figured I'd reach out", "no pressure")
+- Over-explain or be artificially concise
+
+**Do:**
+- Be honest that a research agent found them
+- State the actual signal that flagged them
+- Write in natural paragraphs like a real email
+- Be direct and confident, not deferential
+- Link to videos instead of walls of text
+- Let the process be the pitch (AI-native company uses AI to recruit)
+
+### Email Template
+
 ```
-Subject: [Their project] + something different
+Subject: Tenex Labs
 
-Hey [First name],
+Hey [first name],
 
-[Specific project/tweet] caught my eye - [genuine 1-line reaction].
+I'm Alex Lieberman - I started Morning Brew and now I'm running Tenex Labs. Tenex is an AI dev agency where engineers get paid on output - story points completed equals dollars earned, uncapped. Top engineers here make $500K+.
 
-Building TeneX: AI dev agency where engineers get paid on output.
-Story points = dollars, uncapped. Best people here clear $500K+.
-[Insert tailored hook: variety of problems / elite peers / AI-native culture / meritocracy]
+I built a research agent to find strong candidates and your name came up because [specific reason from enrichment - e.g. "you've shipped three AI tools in the past year" or "your work on X showed up in our search for engineers building with Claude"]. Here's a short video explaining what we do if you want to learn more: [link]
 
-[Why them specifically based on signals].
+Let me know if you'd like to talk.
 
-Worth a quick chat?
-```
-
-**Twitter DM - Initial:**
-```
-[Project/tweet] is sick. [1-line genuine reaction].
-
-Hiring at TeneX - AI dev agency, uncapped comp based on output.
-[One tailored hook]. Open to hearing more?
-```
-
-**Email - Follow-up 1 (3 days):**
-```
-Subject: Re: [original subject]
-
-Floating this back up. Know you're busy shipping.
-
-Quick version: diverse client problems, AI-native team,
-paid directly for output. No politics, no ceiling.
-
-If timing's off, no worries. But if you're curious
-what uncapped actually looks like, happy to share.
+Alex
 ```
 
-**Email - Follow-up 2 (7 days):**
+### Twitter DM Template
+
 ```
-Subject: Re: [original subject]
-
-Last ping.
-
-If [their current thing] has you locked in, totally get it.
-But if you ever want to work with people at your level
-and get paid for what you actually ship - door's open.
+Hey - I'm Alex from Tenex Labs. Built a research agent to find engineers and your name came up because [reason]. We're an AI dev agency with uncapped comp based on output. Here's a quick video if you're curious: [link]
 ```
 
-### Example Messages (for reference)
+### Follow-up 1 (3-4 days)
 
-**For an AI-native builder (hook: elite peers + AI-native):**
 ```
-Subject: claude-flow + something different
+Subject: Re: Tenex Labs
 
-Hey rUv,
+Hey [first name],
 
-claude-flow is impressive - 163 repos and you're building the orchestration
-layer everyone needs. Clearly shipping faster than most teams.
+Wanted to bump this in case it got buried. Short version: AI dev agency, pay based on output, uncapped. Video here if you want to learn more: [link]
 
-Building TeneX: AI dev agency where everyone uses Claude/Cursor daily.
-Comp is uncapped, based on story points. Best engineers clear $500K+.
-You'd be working alongside people who actually get AI-native workflows.
-
-Seems like you'd fit. Worth a chat?
+Alex
 ```
 
-**For someone bored of one product (hook: variety):**
+### Follow-up 2 (7 days)
+
 ```
-Subject: quick question
+Subject: Re: Tenex Labs
 
-Hey [name],
+Last one from me. If the timing isn't right, totally understand. But if you're ever curious what output-based comp actually looks like, the offer stands: [link]
 
-Saw you've been at [company] for 3 years on [product].
-Impressive depth, but wondering if you ever miss variety.
-
-TeneX: different clients, different problems every few months.
-Startups, market leaders, AI products. Paid on output, uncapped.
-
-If you're happy where you are, ignore this. But if you want
-diverse problems with elite engineers - let's talk.
+Alex
 ```
+
+### What Makes This Work
+
+1. **Honesty is differentiating** - "I built a research agent" is interesting, not creepy
+2. **The process is the pitch** - an AI company using AI to recruit signals competence
+3. **Videos do the heavy lifting** - don't explain everything in the email
+4. **Specific signal** - "your name came up because X" shows it's not spam
+5. **Natural paragraphs** - reads like a human wrote it because it flows like speech
+6. **Confident, not desperate** - states facts, offers next step, doesn't beg
 
 ---
 
