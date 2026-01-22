@@ -141,6 +141,16 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
   }
   const signalClass = signalStyles[p.signal as keyof typeof signalStyles] || signalStyles.low
 
+  const outreachStyles: Record<string, string> = {
+    not_contacted: 'bg-zinc-800 text-zinc-500 border-zinc-700',
+    in_progress: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
+    replied: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
+    interested: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    closed: 'bg-red-500/20 text-red-400 border-red-500/30'
+  }
+  const outreachStatus = p.outreach_status || 'not_contacted'
+  const outreachClass = outreachStyles[outreachStatus] || outreachStyles.not_contacted
+
   const hasDetails = p.notes || p.bio || p.company || p.location || p.comp_fit || p.outreach_context
 
   return (
@@ -176,6 +186,9 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
           {p.ai_native ? <span className="text-violet-400">●</span> : <span className="text-zinc-800">○</span>}
         </td>
         <td className="py-3 px-4">
+          <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
+        </td>
+        <td className="py-3 px-4">
           <div className="flex items-center gap-2">
             <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider max-w-[120px] truncate">{p.source || '—'}</span>
             {hasDetails && (
@@ -186,7 +199,7 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
       </tr>
       {hasDetails && (
         <tr>
-          <td colSpan={8} className="p-0">
+          <td colSpan={9} className="p-0">
             <div
               className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}
             >
@@ -346,6 +359,7 @@ function App() {
                   <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
                   <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="Ships Fast">⚡</th>
                   <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="AI Native">🤖</th>
+                  <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
                   <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Source</th>
                 </tr>
               </thead>
