@@ -11,10 +11,20 @@ sqlite3 -header -column prospects.db "SELECT 'Prospects:', COUNT(*) FROM prospec
 ## View dashboard
 
 ```bash
-python3 view.py
+cd dashboard && npm run dev
 ```
 
-Opens a Tailwind-styled dashboard in the browser with stats, outreach pipeline, and all prospects.
+React dashboard at http://localhost:5173. Data loads live from SQLite.
+
+## Visual verification
+
+**USE AGENT-BROWSER TO CHECK YOUR WORK.** After any UI change:
+```bash
+agent-browser open http://localhost:5173
+agent-browser screenshot /tmp/check.png
+agent-browser close
+```
+Then read the screenshot to verify it looks correct. This catches bugs that builds miss.
 
 ## Skills
 

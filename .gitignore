@@ -5,3 +5,16 @@ dist/
 
 .env.local
 dashboard.html
+
+# Database files
+*.db
+
+# Generated data
+dashboard/public/data.json
+
+# Task outputs
+task-outputs/
+tasks/
+
+# Tool configs
+.ralph-tui/

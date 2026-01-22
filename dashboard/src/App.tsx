@@ -1177,7 +1177,7 @@ function App() {
         {/* Footer */}
         <footer className="mt-12 pt-6 border-t border-zinc-900 flex items-center justify-between">
           <div className="font-mono text-[10px] text-zinc-700 uppercase tracking-wider">
-            Refresh: <code className="text-zinc-500 ml-1">python3 export.py</code>
+            Live data from SQLite
           </div>
           <div className="font-mono text-[10px] text-zinc-800">
             TENEX INTELLIGENCE v0.1
