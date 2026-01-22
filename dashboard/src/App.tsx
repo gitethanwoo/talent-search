@@ -108,11 +108,14 @@ function App() {
     setBulkMode(false)
   }
 
+  const MAX_BULK_SELECT = 10
+
   const handleSelectAll = () => {
-    if (checkedIds.size === filteredProspects.length) {
+    if (checkedIds.size > 0) {
       setCheckedIds(new Set())
     } else {
-      setCheckedIds(new Set(filteredProspects.map(p => p.id)))
+      // Select up to MAX_BULK_SELECT
+      setCheckedIds(new Set(filteredProspects.slice(0, MAX_BULK_SELECT).map(p => p.id)))
     }
   }
 
@@ -250,10 +253,10 @@ function App() {
                       onClick={handleSelectAll}
                       className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
                     >
-                      {checkedIds.size === filteredProspects.length ? 'Deselect All' : 'Select All'}
+                      Clear
                     </button>
                     <span className="font-mono text-[10px] text-zinc-600">
-                      {checkedIds.size} selected
+                      {checkedIds.size}/{MAX_BULK_SELECT} selected
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -275,13 +278,14 @@ function App() {
 
               {/* Select All when in bulk mode but none selected */}
               {bulkMode && checkedIds.size === 0 && (
-                <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0">
+                <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0 flex items-center justify-between">
                   <button
                     onClick={handleSelectAll}
                     className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
                   >
-                    Select All ({filteredProspects.length})
+                    Select First {Math.min(MAX_BULK_SELECT, filteredProspects.length)}
                   </button>
+                  <span className="font-mono text-[10px] text-zinc-700">max {MAX_BULK_SELECT} at a time</span>
                 </div>
               )}
 
@@ -296,8 +300,11 @@ function App() {
                     onClick={() => setSelectedProspectId(p.id)}
                     onCheck={(checked) => {
                       const newSet = new Set(checkedIds)
-                      if (checked) newSet.add(p.id)
-                      else newSet.delete(p.id)
+                      if (checked && newSet.size < MAX_BULK_SELECT) {
+                        newSet.add(p.id)
+                      } else if (!checked) {
+                        newSet.delete(p.id)
+                      }
                       setCheckedIds(newSet)
                     }}
                     hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
