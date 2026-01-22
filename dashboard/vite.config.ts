@@ -178,6 +178,7 @@ function actionLoggerPlugin() {
                 draft: ['Bash', 'Read', 'TodoWrite'],
                 reject: ['Bash'],
                 rewrite: ['Bash', 'Read'],
+                research: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read', 'Task'],
               }
 
               if (action.action === 'enrich') {
@@ -275,6 +276,29 @@ INSTRUCTIONS:
    WHERE id=${action.draftId}"
 
 5. Confirm what you changed and why.`
+              } else if (action.action === 'research') {
+                const source = action.source || 'any'
+                prompt = `/prospect-researcher
+
+Find new AI engineer prospects${source !== 'any' ? ` from ${source}` : ''}.
+
+INSTRUCTIONS:
+1. First check what sources have been checked recently:
+   sqlite3 -header -column prospects.db "SELECT source_type, source_name, checked_at FROM sources_checked ORDER BY checked_at DESC LIMIT 10"
+
+2. Pick a source that needs refreshing (or a new one). Good options:
+   - Twitter/Nitter: search "built with claude", "vibe coding", "shipped in a weekend"
+   - Hacker News: Show HN posts about AI tools, agents
+   - GitHub: contributors to AI repos (vercel/ai, anthropics/claude-code, etc.)
+
+3. For each potential prospect:
+   - Check if already in DB: sqlite3 prospects.db "SELECT 1 FROM prospects WHERE github_username='{user}' UNION SELECT 1 FROM rejected WHERE github_username='{user}'"
+   - Qualify: Do they ship fast? AI-native? Would they like uncapped comp?
+   - Add good ones, reject others with reason
+
+4. Log the source as checked when done.
+
+5. Report what you found: how many new prospects added, notable finds.`
               }
 
               if (prompt) {
