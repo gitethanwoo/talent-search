@@ -3,8 +3,18 @@ import TaskViewerPage from './components/TaskViewer'
 import { TaskPanel } from './components/TaskPanel'
 import { DraftCard, DraftModal } from './components/Drafts'
 import { ProspectListItem, ProspectProfile } from './components/Prospects'
-import type { Prospect, Draft, OutreachFilter } from './types'
-import { outreachFilterLabels, isContactable } from './types'
+import type { Prospect, Draft } from './types'
+import { isContactable } from './types'
+
+type PipelineStage = 'all' | 'needs_enrichment' | 'needs_draft' | 'ready_to_send' | 'contacted'
+
+const pipelineStageLabels: Record<PipelineStage, string> = {
+  all: 'All Prospects',
+  needs_enrichment: 'Needs Enrichment',
+  needs_draft: 'Needs Draft',
+  ready_to_send: 'Ready to Send',
+  contacted: 'Contacted',
+}
 
 interface Stats {
   prospects: number
@@ -41,7 +51,7 @@ function App() {
   const [draftModal, setDraftModal] = useState<Draft | null>(null)
   const [loaded, setLoaded] = useState(false)
   const [selectedProspectId, setSelectedProspectId] = useState<number | null>(null)
-  const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
+  const [pipelineStage, setPipelineStage] = useState<PipelineStage>('all')
   const [contactableOnly, setContactableOnly] = useState(false)
   const [bulkMode, setBulkMode] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
@@ -62,24 +72,45 @@ function App() {
     return () => clearInterval(interval)
   }, [])
 
-  // Compute outreach filter counts
-  const outreachCounts = data ? (Object.keys(outreachFilterLabels) as OutreachFilter[]).reduce((acc, key) => {
+  // Helper to determine prospect's pipeline stage
+  const getProspectStage = (p: Prospect, drafts: Draft[]): PipelineStage => {
+    const hasDraft = drafts.some(d => d.github_username === p.github_username)
+    const isContacted = ['in_progress', 'replied', 'interested', 'closed'].includes(p.outreach_status || '')
+
+    if (isContacted) return 'contacted'
+    if (hasDraft) return 'ready_to_send'
+    if (p.enriched_at) return 'needs_draft'
+    return 'needs_enrichment'
+  }
+
+  // Compute pipeline stage counts
+  const stageCounts = data ? (Object.keys(pipelineStageLabels) as PipelineStage[]).reduce((acc, key) => {
     if (key === 'all') {
       acc[key] = data.prospects.length
     } else {
-      acc[key] = data.prospects.filter(p => (p.outreach_status || 'not_contacted') === key).length
+      acc[key] = data.prospects.filter(p => getProspectStage(p, data.drafts) === key).length
     }
     return acc
-  }, {} as Record<OutreachFilter, number>) : {} as Record<OutreachFilter, number>
+  }, {} as Record<PipelineStage, number>) : {} as Record<PipelineStage, number>
 
-  // Filter prospects based on outreach status and contactable filter
+  // Filter prospects based on pipeline stage and contactable filter
   const selectedProspect = data && selectedProspectId ? data.prospects.find(p => p.id === selectedProspectId) : null
 
   const filteredProspects = data ? data.prospects.filter(p => {
-    const matchesOutreach = outreachFilter === 'all' || (p.outreach_status || 'not_contacted') === outreachFilter
+    const matchesStage = pipelineStage === 'all' || getProspectStage(p, data.drafts) === pipelineStage
     const matchesContactable = !contactableOnly || isContactable(p)
-    return matchesOutreach && matchesContactable
+    return matchesStage && matchesContactable
   }) : []
+
+  // Determine which bulk action to show based on current filter
+  const bulkActionForStage: Record<PipelineStage, 'enrich' | 'draft' | null> = {
+    all: null, // Too ambiguous
+    needs_enrichment: 'enrich',
+    needs_draft: 'draft',
+    ready_to_send: null, // Manual send
+    contacted: null, // Already done
+  }
+  const currentBulkAction = bulkActionForStage[pipelineStage]
 
   // Bulk action handlers
   const handleBulkEnrich = () => {
@@ -204,16 +235,20 @@ function App() {
           <div className="flex border border-zinc-900 flex-1 min-h-0">
             {/* Left: Prospect List */}
             <div className="w-80 border-r border-zinc-900 flex flex-col flex-shrink-0">
-              {/* Filters */}
+              {/* Pipeline Stage Filter */}
               <div className="p-3 border-b border-zinc-900 space-y-2 flex-shrink-0">
                 <select
-                  value={outreachFilter}
-                  onChange={e => setOutreachFilter(e.target.value as OutreachFilter)}
+                  value={pipelineStage}
+                  onChange={e => {
+                    setPipelineStage(e.target.value as PipelineStage)
+                    setCheckedIds(new Set())
+                    setBulkMode(false)
+                  }}
                   className="w-full font-mono text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 px-2 py-1.5 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
                 >
-                  {(Object.keys(outreachFilterLabels) as OutreachFilter[]).map(key => (
+                  {(Object.keys(pipelineStageLabels) as PipelineStage[]).map(key => (
                     <option key={key} value={key}>
-                      {outreachFilterLabels[key]} ({outreachCounts[key]})
+                      {pipelineStageLabels[key]} ({stageCounts[key]})
                     </option>
                   ))}
                 </select>
@@ -229,24 +264,26 @@ function App() {
                       Contactable only
                     </span>
                   </label>
-                  <button
-                    onClick={() => {
-                      setBulkMode(!bulkMode)
-                      if (bulkMode) setCheckedIds(new Set())
-                    }}
-                    className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border transition-all ${
-                      bulkMode
-                        ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
-                        : 'text-zinc-600 border-zinc-800 hover:text-zinc-400 hover:border-zinc-700'
-                    }`}
-                  >
-                    {bulkMode ? 'Cancel' : 'Select'}
-                  </button>
+                  {currentBulkAction && (
+                    <button
+                      onClick={() => {
+                        setBulkMode(!bulkMode)
+                        if (bulkMode) setCheckedIds(new Set())
+                      }}
+                      className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border transition-all ${
+                        bulkMode
+                          ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                          : 'text-zinc-600 border-zinc-800 hover:text-zinc-400 hover:border-zinc-700'
+                      }`}
+                    >
+                      {bulkMode ? 'Cancel' : 'Select'}
+                    </button>
+                  )}
                 </div>
               </div>
 
-              {/* Bulk Actions Bar */}
-              {bulkMode && checkedIds.size > 0 && (
+              {/* Bulk Actions Bar - contextual based on pipeline stage */}
+              {bulkMode && currentBulkAction && checkedIds.size > 0 && (
                 <div className="p-3 border-b border-zinc-900 bg-zinc-900/50 flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <button
@@ -259,25 +296,27 @@ function App() {
                       {checkedIds.size}/{MAX_BULK_SELECT} selected
                     </span>
                   </div>
-                  <div className="flex items-center gap-2">
+                  {currentBulkAction === 'enrich' && (
                     <button
                       onClick={handleBulkEnrich}
-                      className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
+                      className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
                     >
-                      Enrich All
+                      Enrich {checkedIds.size}
                     </button>
+                  )}
+                  {currentBulkAction === 'draft' && (
                     <button
                       onClick={handleBulkDraft}
-                      className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                      className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
                     >
-                      Draft All
+                      Draft {checkedIds.size}
                     </button>
-                  </div>
+                  )}
                 </div>
               )}
 
-              {/* Select All when in bulk mode but none selected */}
-              {bulkMode && checkedIds.size === 0 && (
+              {/* Select prompt when in bulk mode but none selected */}
+              {bulkMode && currentBulkAction && checkedIds.size === 0 && (
                 <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0 flex items-center justify-between">
                   <button
                     onClick={handleSelectAll}
@@ -285,7 +324,7 @@ function App() {
                   >
                     Select First {Math.min(MAX_BULK_SELECT, filteredProspects.length)}
                   </button>
-                  <span className="font-mono text-[10px] text-zinc-700">max {MAX_BULK_SELECT} at a time</span>
+                  <span className="font-mono text-[10px] text-zinc-700">max {MAX_BULK_SELECT}</span>
                 </div>
               )}
 
