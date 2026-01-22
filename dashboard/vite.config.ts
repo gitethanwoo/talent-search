@@ -341,6 +341,15 @@ INSTRUCTIONS:
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true }))
                 return
+              } else if (action.action === 'update_outreach_status') {
+                // Direct DB update for outreach status
+                const db = new Database(DB_PATH)
+                db.prepare(`UPDATE prospects SET outreach_status = ? WHERE github_username = ?`).run(action.status, action.username)
+                db.close()
+                console.log(`\x1b[32m[STATUS]\x1b[0m Set ${action.username} to ${action.status}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+                return
               } else if (action.action === 'research') {
                 const source = action.source || 'any'
                 prompt = `/prospect-researcher
