@@ -49,6 +49,13 @@ data = {
             CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
             ships_fast DESC
     """),
+    "drafts": query("""
+        SELECT p.github_username, p.name, p.email, m.subject, m.body, m.channel, m.created_at
+        FROM outreach_messages m
+        JOIN prospects p ON p.id = m.prospect_id
+        WHERE m.status = 'draft'
+        ORDER BY m.created_at DESC
+    """),
 }
 
 html = f'''<!DOCTYPE html>
@@ -98,6 +105,22 @@ html = f'''<!DOCTYPE html>
         <div class="text-3xl font-bold text-zinc-500">{data["stats"]["rejected"]}</div>
         <div class="text-zinc-500 text-sm">Rejected</div>
       </div>
+    </div>
+
+    <!-- Draft Messages -->
+    <h2 class="text-xl font-semibold mb-4">Draft Messages ({len(data["drafts"])})</h2>
+    <div class="space-y-4 mb-10">
+      {"".join(f'''<div class="bg-zinc-900 rounded-lg p-4">
+        <div class="flex justify-between items-start mb-3">
+          <div>
+            <span class="font-semibold">{r["name"] or r["github_username"]}</span>
+            <span class="text-zinc-500 ml-2">{r["email"] or ""}</span>
+          </div>
+          <span class="px-2 py-1 rounded text-xs bg-zinc-700">{r["channel"]}</span>
+        </div>
+        <div class="text-zinc-400 text-sm mb-2">Subject: {r["subject"]}</div>
+        <div class="bg-zinc-800 rounded p-3 text-sm whitespace-pre-wrap font-mono">{r["body"]}</div>
+      </div>''' for r in data["drafts"]) or '<div class="bg-zinc-900 rounded-lg p-4 text-zinc-500">No drafts</div>'}
     </div>
 
     <!-- Outreach Pipeline -->
