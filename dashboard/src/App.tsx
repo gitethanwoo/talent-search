@@ -402,12 +402,14 @@ function StreamEventView({ event }: { event: StreamEvent }) {
 }
 
 type PanelMode = 'minimized' | 'normal' | 'expanded'
+type TaskView = 'active' | 'history'
 
 function TaskPanel() {
   const [tasks, setTasks] = useState<AgentTask[]>([])
   const [mode, setMode] = useState<PanelMode>('normal')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
+  const [view, setView] = useState<TaskView>('active')
 
   // Use SSE for real-time streaming updates
   useEffect(() => {
@@ -439,7 +441,10 @@ function TaskPanel() {
   }, [])
 
   const runningCount = tasks.filter(t => t.status === 'running').length
-  const recentTasks = tasks.slice(0, 20)
+  const completedCount = tasks.filter(t => t.status !== 'running').length
+  const activeTasks = tasks.filter(t => t.status === 'running')
+  const historyTasks = tasks.filter(t => t.status !== 'running')
+  const displayedTasks = view === 'active' ? (activeTasks.length > 0 ? activeTasks : tasks.slice(0, 5)) : historyTasks
   const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
 
   // Auto-select first running task if none selected
@@ -449,8 +454,6 @@ function TaskPanel() {
       if (firstRunning) setSelectedTaskId(firstRunning.id)
     }
   }, [tasks, selectedTaskId, runningCount])
-
-  if (tasks.length === 0) return null
 
   // Minimized: just a small bar
   if (mode === 'minimized') {
@@ -479,14 +482,27 @@ function TaskPanel() {
       <div className="fixed inset-4 bg-zinc-950 border border-zinc-800 shadow-2xl z-50 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800 flex-shrink-0">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
             <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Agent Tasks</span>
-            {runningCount > 0 && (
-              <span className="flex items-center gap-2">
-                <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-                <span className="font-mono text-xs text-amber-400">{runningCount} running</span>
-              </span>
-            )}
+            {/* View toggle */}
+            <div className="flex items-center gap-1 bg-zinc-900 border border-zinc-800 p-0.5">
+              <button
+                onClick={() => setView('active')}
+                className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1 transition-all ${
+                  view === 'active' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-400'
+                }`}
+              >
+                Active {runningCount > 0 && <span className="text-amber-400 ml-1">{runningCount}</span>}
+              </button>
+              <button
+                onClick={() => setView('history')}
+                className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1 transition-all ${
+                  view === 'history' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-400'
+                }`}
+              >
+                History {completedCount > 0 && <span className="text-zinc-500 ml-1">{completedCount}</span>}
+              </button>
+            </div>
             {!connected && <span className="text-xs text-red-400">(reconnecting...)</span>}
           </div>
           <div className="flex items-center gap-2">
@@ -515,23 +531,36 @@ function TaskPanel() {
         <div className="flex flex-1 min-h-0">
           {/* Task list */}
           <div className="w-80 border-r border-zinc-800 overflow-y-auto flex-shrink-0">
-            {recentTasks.map(task => (
-              <div
-                key={task.id}
-                className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-colors ${
-                  selectedTaskId === task.id ? 'bg-zinc-800/50' : 'hover:bg-zinc-900/50'
-                }`}
-                onClick={() => setSelectedTaskId(task.id)}
-              >
-                <div className="flex items-center gap-2">
-                  {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />}
-                  {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />}
-                  {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />}
-                  <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
-                  <span className="font-mono text-sm text-zinc-300 truncate">@{task.target}</span>
+            {displayedTasks.length === 0 ? (
+              <div className="px-4 py-8 text-center">
+                <div className="font-mono text-xs text-zinc-600">
+                  {view === 'active' ? 'No active tasks' : 'No task history'}
                 </div>
               </div>
-            ))}
+            ) : (
+              displayedTasks.map(task => (
+                <div
+                  key={task.id}
+                  className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-colors ${
+                    selectedTaskId === task.id ? 'bg-zinc-800/50' : 'hover:bg-zinc-900/50'
+                  }`}
+                  onClick={() => setSelectedTaskId(task.id)}
+                >
+                  <div className="flex items-center gap-2">
+                    {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />}
+                    {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />}
+                    {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />}
+                    <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                    <span className="font-mono text-sm text-zinc-300 truncate">@{task.target}</span>
+                  </div>
+                  {view === 'history' && task.completedAt && (
+                    <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                      {new Date(task.completedAt).toLocaleString()}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
           </div>
 
           {/* Output panel */}
@@ -579,17 +608,32 @@ function TaskPanel() {
   }
 
   // Normal mode: bottom-right panel
+  const normalTasks = view === 'active' ? (activeTasks.length > 0 ? activeTasks : tasks.slice(0, 3)) : historyTasks.slice(0, 10)
+
   return (
     <div className="fixed bottom-4 right-4 w-[500px] bg-zinc-950 border border-zinc-800 shadow-2xl z-50">
       <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Agent Tasks</span>
-          {runningCount > 0 && (
-            <span className="flex items-center gap-2">
-              <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />
-              <span className="font-mono text-xs text-amber-400">{runningCount} running</span>
-            </span>
-          )}
+          <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Tasks</span>
+          {/* View toggle */}
+          <div className="flex items-center gap-0.5 bg-zinc-900 border border-zinc-800 p-0.5">
+            <button
+              onClick={() => setView('active')}
+              className={`font-mono text-[9px] uppercase tracking-wider px-2 py-0.5 transition-all ${
+                view === 'active' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-400'
+              }`}
+            >
+              Active{runningCount > 0 && <span className="text-amber-400 ml-1">{runningCount}</span>}
+            </button>
+            <button
+              onClick={() => setView('history')}
+              className={`font-mono text-[9px] uppercase tracking-wider px-2 py-0.5 transition-all ${
+                view === 'history' ? 'bg-zinc-800 text-zinc-200' : 'text-zinc-500 hover:text-zinc-400'
+              }`}
+            >
+              History
+            </button>
+          </div>
           {!connected && <span className="text-xs text-red-400">(reconnecting...)</span>}
         </div>
         <div className="flex items-center gap-1">
@@ -614,31 +658,44 @@ function TaskPanel() {
         </div>
       </div>
       <div className="max-h-[400px] overflow-y-auto">
-        {recentTasks.slice(0, 10).map(task => (
-          <div
-            key={task.id}
-            className="px-4 py-3 border-b border-zinc-900 last:border-0 cursor-pointer hover:bg-zinc-900/30"
-            onClick={() => { setSelectedTaskId(task.id); setMode('expanded') }}
-          >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-2">
-                {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />}
-                {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full" />}
-                {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full" />}
-                <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
-                <span className="font-mono text-sm text-zinc-300">@{task.target}</span>
-              </div>
-              <span className="font-mono text-[10px] text-zinc-600">
-                {task.status === 'running' ? 'running...' : task.status}
-              </span>
+        {normalTasks.length === 0 ? (
+          <div className="px-4 py-8 text-center">
+            <div className="font-mono text-xs text-zinc-600">
+              {view === 'active' ? 'No active tasks' : 'No task history'}
             </div>
-            {task.lastOutput && (
-              <div className="mt-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded">
-                <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap break-words leading-relaxed line-clamp-4">{task.lastOutput}</pre>
-              </div>
-            )}
           </div>
-        ))}
+        ) : (
+          normalTasks.map(task => (
+            <div
+              key={task.id}
+              className="px-4 py-3 border-b border-zinc-900 last:border-0 cursor-pointer hover:bg-zinc-900/30"
+              onClick={() => { setSelectedTaskId(task.id); setMode('expanded') }}
+            >
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />}
+                  {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full" />}
+                  {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full" />}
+                  <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                  <span className="font-mono text-sm text-zinc-300">@{task.target}</span>
+                </div>
+                <span className="font-mono text-[10px] text-zinc-600">
+                  {task.status === 'running' ? 'running...' : task.status}
+                </span>
+              </div>
+              {view === 'history' && task.completedAt && (
+                <div className="font-mono text-[10px] text-zinc-600 mb-1">
+                  {new Date(task.completedAt).toLocaleString()}
+                </div>
+              )}
+              {task.lastOutput && view === 'active' && (
+                <div className="mt-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded">
+                  <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap break-words leading-relaxed line-clamp-4">{task.lastOutput}</pre>
+                </div>
+              )}
+            </div>
+          ))
+        )}
       </div>
     </div>
   )

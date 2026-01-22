@@ -73,9 +73,55 @@ interface Task {
   events?: StreamEvent[]
 }
 
-// In-memory task store
+// Task store - load from SQLite on startup
 const tasks: Map<string, Task> = new Map()
 let taskCounter = 0
+
+function loadTasksFromDb() {
+  try {
+    const db = new Database(DB_PATH, { readonly: true })
+    const rows = db.prepare(`
+      SELECT id, action, target, status, started_at, completed_at, error
+      FROM tasks ORDER BY started_at DESC LIMIT 50
+    `).all() as Array<{id: string, action: string, target: string, status: string, started_at: string, completed_at: string | null, error: string | null}>
+
+    for (const row of rows) {
+      tasks.set(row.id, {
+        id: row.id,
+        action: row.action,
+        target: row.target,
+        status: row.status as 'running' | 'done' | 'error',
+        startedAt: row.started_at,
+        completedAt: row.completed_at || undefined,
+        error: row.error || undefined,
+        events: [] // Events not persisted for now
+      })
+      // Track highest task number
+      const num = parseInt(row.id.replace('task-', ''))
+      if (num > taskCounter) taskCounter = num
+    }
+    db.close()
+    console.log(`\x1b[35m[DB]\x1b[0m Loaded ${rows.length} tasks from history`)
+  } catch (e) {
+    console.error('[DB] Failed to load tasks:', e)
+  }
+}
+
+function saveTaskToDb(task: Task) {
+  try {
+    const db = new Database(DB_PATH)
+    db.prepare(`
+      INSERT OR REPLACE INTO tasks (id, action, target, status, started_at, completed_at, error)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(task.id, task.action, task.target, task.status, task.startedAt, task.completedAt || null, task.error || null)
+    db.close()
+  } catch (e) {
+    console.error('[DB] Failed to save task:', e)
+  }
+}
+
+// Load existing tasks on module init
+loadTasksFromDb()
 
 // SSE clients for streaming updates
 const sseClients: Set<ServerResponse> = new Set()
@@ -319,6 +365,7 @@ INSTRUCTIONS:
                   fullOutput: ''
                 }
                 tasks.set(taskId, task)
+                saveTaskToDb(task)
                 broadcastTaskUpdate(task)
 
                 const tools = toolsByAction[taskAction] || ['Bash']
@@ -413,6 +460,7 @@ INSTRUCTIONS:
                     task.status = 'done'
                   }
                   task.completedAt = completedAt
+                  saveTaskToDb(task)
                   broadcastTaskUpdate(task)
                 })
 

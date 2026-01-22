@@ -94,7 +94,7 @@ function ToolBadge({ tool }: { tool: string }) {
   )
 }
 
-function StreamEventView({ event, isLast }: { event: StreamEvent; isLast: boolean }) {
+function StreamEventView({ event }: { event: StreamEvent }) {
   const [expanded, setExpanded] = useState(true)
 
   if (event.type === 'text') {
@@ -204,7 +204,7 @@ function TaskOutput({ task }: { task: MockTask }) {
       <div className="flex-1 overflow-y-auto p-4 bg-zinc-950/50">
         <div className="space-y-1">
           {task.events.map((event, i) => (
-            <StreamEventView key={i} event={event} isLast={i === task.events.length - 1} />
+            <StreamEventView key={i} event={event} />
           ))}
           {task.status === 'running' && (
             <div className="flex items-center gap-2 py-2 text-zinc-600">

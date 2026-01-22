@@ -26,7 +26,8 @@ For each prospect, work through EVERY item. Use TodoWrite to track progress. Mar
 **Email** (CRITICAL)
 - [ ] Check GitHub profile: `gh api users/{username} --jq '.email'`
 - [ ] Check GitHub commit emails: `gh api users/{username}/events --jq '.[].payload.commits[]?.author.email' | head -5`
-- [ ] Check personal website/blog contact page
+- [ ] Check repo commits directly - often the best way: `gh api repos/{username}/{repo}/commits --jq '.[0].commit.author.email'`
+- [ ] Check personal website/blog contact page (note: many sites use Cloudflare email protection which hides emails from scrapers)
 - [ ] Google: `"{name}" email`
 - [ ] Google: `"{github_username}" email`
 - [ ] Check Twitter bio for email
