@@ -221,10 +221,10 @@ function actionLoggerPlugin() {
 
               // Tool restrictions per action type
               const toolsByAction: Record<string, string[]> = {
-                enrich: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read'],
-                draft: ['Bash', 'Read', 'TodoWrite'],
+                enrich: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read', 'Skill'],
+                draft: ['Bash', 'Read', 'TodoWrite', 'Skill'],
                 reject: ['Bash'],
-                rewrite: ['Bash', 'Read'],
+                rewrite: ['Bash', 'Read', 'Skill'],
                 research: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read', 'Task', 'Skill'],
               }
 

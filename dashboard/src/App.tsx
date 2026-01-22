@@ -351,47 +351,49 @@ function ToolBadge({ tool }: { tool: string }) {
 }
 
 function StreamEventView({ event }: { event: StreamEvent }) {
-  const [expanded, setExpanded] = useState(true)
+  const [expanded, setExpanded] = useState(false)
 
   if (event.type === 'text') {
     return <div className="py-1.5 text-zinc-300 leading-relaxed text-sm">{event.content}</div>
   }
 
   if (event.type === 'tool_call') {
+    // Truncate long commands for inline display
+    const shortContent = event.content.length > 80 ? event.content.slice(0, 80) + '...' : event.content
+    const isLong = event.content.length > 80
+
     return (
-      <div className="py-1.5">
-        <div className="flex items-center gap-2">
-          <span className="text-zinc-600 text-xs">▶</span>
-          <ToolBadge tool={event.tool || 'Unknown'} />
-        </div>
-        <div className="ml-4 pl-3 border-l border-zinc-800 mt-1">
-          <pre className="font-mono text-xs text-zinc-500 whitespace-pre-wrap break-all">{event.content}</pre>
-        </div>
+      <div className="py-1 flex items-start gap-2">
+        <span className="text-zinc-600 text-xs mt-0.5">▶</span>
+        <ToolBadge tool={event.tool || 'Unknown'} />
+        {isLong ? (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="font-mono text-xs text-zinc-500 hover:text-zinc-400 text-left flex-1 min-w-0"
+          >
+            <span className="break-all">{expanded ? event.content : shortContent}</span>
+          </button>
+        ) : (
+          <span className="font-mono text-xs text-zinc-500 break-all">{event.content}</span>
+        )}
       </div>
     )
   }
 
   if (event.type === 'tool_result') {
-    const isLong = event.content.length > 300
+    if (!event.content || event.content.trim().length === 0) return null
+
     return (
-      <div className="py-1 ml-4 pl-3 border-l border-zinc-800">
-        {isLong ? (
-          <div>
-            <button
-              onClick={() => setExpanded(!expanded)}
-              className="flex items-center gap-2 text-zinc-600 hover:text-zinc-400 transition-colors text-xs font-mono"
-            >
-              <span className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>▸</span>
-              <span>{expanded ? 'Hide' : 'Show'} ({event.content.length} chars)</span>
-            </button>
-            {expanded && (
-              <pre className="mt-1 p-2 bg-zinc-900/50 border border-zinc-800 font-mono text-xs text-zinc-400 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
-                {event.content}
-              </pre>
-            )}
-          </div>
-        ) : (
-          <pre className="p-2 bg-zinc-900/30 font-mono text-xs text-zinc-500 whitespace-pre-wrap break-all">
+      <div className="py-0.5 ml-6">
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="flex items-center gap-2 text-zinc-600 hover:text-zinc-400 transition-colors text-xs font-mono"
+        >
+          <span className={`transition-transform ${expanded ? 'rotate-90' : ''}`}>▸</span>
+          <span>{expanded ? 'Hide' : 'Show'} output ({event.content.length} chars)</span>
+        </button>
+        {expanded && (
+          <pre className="mt-1 p-2 bg-zinc-900/50 border border-zinc-800 font-mono text-xs text-zinc-400 whitespace-pre-wrap break-all max-h-[200px] overflow-y-auto">
             {event.content}
           </pre>
         )}
@@ -405,7 +407,7 @@ function StreamEventView({ event }: { event: StreamEvent }) {
 type PanelMode = 'minimized' | 'normal' | 'expanded'
 type TaskView = 'active' | 'history'
 
-function TaskPanel() {
+function TaskPanel({ onViewProspect }: { onViewProspect?: (username: string) => void }) {
   const [tasks, setTasks] = useState<AgentTask[]>([])
   const [mode, setMode] = useState<PanelMode>('normal')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -445,7 +447,7 @@ function TaskPanel() {
   const completedCount = tasks.filter(t => t.status !== 'running').length
   const activeTasks = tasks.filter(t => t.status === 'running')
   const historyTasks = tasks.filter(t => t.status !== 'running')
-  const displayedTasks = view === 'active' ? (activeTasks.length > 0 ? activeTasks : tasks.slice(0, 5)) : historyTasks
+  const displayedTasks = view === 'active' ? activeTasks : historyTasks
   const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
 
   // Auto-select first running task if none selected
@@ -539,28 +541,34 @@ function TaskPanel() {
                 </div>
               </div>
             ) : (
-              displayedTasks.map(task => (
-                <div
-                  key={task.id}
-                  className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-colors ${
-                    selectedTaskId === task.id ? 'bg-zinc-800/50' : 'hover:bg-zinc-900/50'
-                  }`}
-                  onClick={() => setSelectedTaskId(task.id)}
-                >
-                  <div className="flex items-center gap-2">
-                    {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />}
-                    {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />}
-                    {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />}
-                    <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
-                    <span className="font-mono text-sm text-zinc-300 truncate">@{task.target}</span>
-                  </div>
-                  {view === 'history' && task.completedAt && (
-                    <div className="font-mono text-[10px] text-zinc-600 mt-1">
-                      {new Date(task.completedAt).toLocaleString()}
+              displayedTasks.map(task => {
+                const hasEvents = task.events && task.events.length > 0
+                const isClickable = hasEvents || task.status === 'running'
+                return (
+                  <div
+                    key={task.id}
+                    className={`px-4 py-3 border-b border-zinc-900 transition-colors ${
+                      isClickable ? 'cursor-pointer' : ''
+                    } ${
+                      selectedTaskId === task.id ? 'bg-zinc-800/50' : isClickable ? 'hover:bg-zinc-900/50' : ''
+                    }`}
+                    onClick={() => isClickable && setSelectedTaskId(task.id)}
+                  >
+                    <div className="flex items-center gap-2">
+                      {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse flex-shrink-0" />}
+                      {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full flex-shrink-0" />}
+                      {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full flex-shrink-0" />}
+                      <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                      <span className="font-mono text-sm text-zinc-300 truncate">@{task.target}</span>
                     </div>
-                  )}
-                </div>
-              ))
+                    {view === 'history' && task.completedAt && (
+                      <div className="font-mono text-[10px] text-zinc-600 mt-1">
+                        {new Date(task.completedAt).toLocaleString()}
+                      </div>
+                    )}
+                  </div>
+                )
+              })
             )}
           </div>
 
@@ -609,7 +617,7 @@ function TaskPanel() {
   }
 
   // Normal mode: bottom-right panel
-  const normalTasks = view === 'active' ? (activeTasks.length > 0 ? activeTasks : tasks.slice(0, 3)) : historyTasks.slice(0, 10)
+  const normalTasks = view === 'active' ? activeTasks : historyTasks.slice(0, 10)
 
   return (
     <div className="fixed bottom-4 right-4 w-[500px] bg-zinc-950 border border-zinc-800 shadow-2xl z-50">
@@ -666,36 +674,40 @@ function TaskPanel() {
             </div>
           </div>
         ) : (
-          normalTasks.map(task => (
-            <div
-              key={task.id}
-              className="px-4 py-3 border-b border-zinc-900 last:border-0 cursor-pointer hover:bg-zinc-900/30"
-              onClick={() => { setSelectedTaskId(task.id); setMode('expanded') }}
-            >
-              <div className="flex items-center justify-between mb-1">
-                <div className="flex items-center gap-2">
-                  {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />}
-                  {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full" />}
-                  {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full" />}
-                  <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
-                  <span className="font-mono text-sm text-zinc-300">@{task.target}</span>
+          normalTasks.map(task => {
+            const hasEvents = task.events && task.events.length > 0
+            const isClickable = hasEvents || task.status === 'running'
+            return (
+              <div
+                key={task.id}
+                className={`px-4 py-3 border-b border-zinc-900 last:border-0 ${isClickable ? 'cursor-pointer hover:bg-zinc-900/30' : ''}`}
+                onClick={() => { if (isClickable) { setSelectedTaskId(task.id); setMode('expanded') } }}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <div className="flex items-center gap-2">
+                    {task.status === 'running' && <span className="w-2 h-2 bg-amber-400 rounded-full animate-pulse" />}
+                    {task.status === 'done' && <span className="w-2 h-2 bg-emerald-400 rounded-full" />}
+                    {task.status === 'error' && <span className="w-2 h-2 bg-red-400 rounded-full" />}
+                    <span className="font-mono text-xs uppercase text-zinc-500">{task.action}</span>
+                    <span className="font-mono text-sm text-zinc-300">@{task.target}</span>
+                  </div>
+                  <span className="font-mono text-[10px] text-zinc-600">
+                    {task.status === 'running' ? 'running...' : task.status}
+                  </span>
                 </div>
-                <span className="font-mono text-[10px] text-zinc-600">
-                  {task.status === 'running' ? 'running...' : task.status}
-                </span>
+                {view === 'history' && task.completedAt && (
+                  <div className="font-mono text-[10px] text-zinc-600 mb-1">
+                    {new Date(task.completedAt).toLocaleString()}
+                  </div>
+                )}
+                {task.lastOutput && view === 'active' && (
+                  <div className="mt-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded">
+                    <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap break-words leading-relaxed line-clamp-4">{task.lastOutput}</pre>
+                  </div>
+                )}
               </div>
-              {view === 'history' && task.completedAt && (
-                <div className="font-mono text-[10px] text-zinc-600 mb-1">
-                  {new Date(task.completedAt).toLocaleString()}
-                </div>
-              )}
-              {task.lastOutput && view === 'active' && (
-                <div className="mt-2 p-3 bg-zinc-900/50 border border-zinc-800 rounded">
-                  <pre className="font-mono text-xs text-zinc-400 whitespace-pre-wrap break-words leading-relaxed line-clamp-4">{task.lastOutput}</pre>
-                </div>
-              )}
-            </div>
-          ))
+            )
+          })
         )}
       </div>
     </div>
