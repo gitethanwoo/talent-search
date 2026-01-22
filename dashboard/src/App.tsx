@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import type { ReactNode } from 'react'
 
 interface Stats {
   prospects: number
@@ -56,6 +57,36 @@ interface Data {
 
 function mailto(to: string, subject: string, body: string) {
   return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
+}
+
+function Tooltip({ children, text }: { children: ReactNode; text: string }) {
+  const [show, setShow] = useState(false)
+  const [delayedShow, setDelayedShow] = useState(false)
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>
+    if (show) {
+      timer = setTimeout(() => setDelayedShow(true), 300)
+    } else {
+      setDelayedShow(false)
+    }
+    return () => clearTimeout(timer)
+  }, [show])
+
+  return (
+    <span
+      className="relative inline-flex"
+      onMouseEnter={() => setShow(true)}
+      onMouseLeave={() => setShow(false)}
+    >
+      {children}
+      {delayedShow && (
+        <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs font-mono bg-zinc-800 text-zinc-200 border border-zinc-700 whitespace-nowrap">
+          {text}
+        </span>
+      )}
+    </span>
+  )
 }
 
 function StatCard({ value, label, accent }: { value: number; label: string; accent?: string }) {
@@ -184,17 +215,25 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
           <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
         </td>
         <td className="py-3 px-4 text-center">
-          {p.ships_fast ? <span className="text-blue-400">●</span> : <span className="text-zinc-800">○</span>}
+          {p.ships_fast ? (
+            <Tooltip text="Ships Fast - high commit velocity">
+              <span className="text-blue-400">⚡</span>
+            </Tooltip>
+          ) : <span className="text-zinc-800">○</span>}
         </td>
         <td className="py-3 px-4 text-center">
-          {p.ai_native ? <span className="text-violet-400">●</span> : <span className="text-zinc-800">○</span>}
+          {p.ai_native ? (
+            <Tooltip text="AI Native - works with AI tools">
+              <span className="text-violet-400">🤖</span>
+            </Tooltip>
+          ) : <span className="text-zinc-800">○</span>}
         </td>
         <td className="py-3 px-4">
           <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
         </td>
         <td className="py-3 px-4">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider max-w-[120px] truncate">{p.source || '—'}</span>
+            <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider">{p.source || '—'}</span>
             {hasDetails && (
               <span className={`font-mono text-zinc-600 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
             )}
@@ -464,8 +503,12 @@ function App() {
                     <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Contact</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
-                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="Ships Fast">⚡</th>
-                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="AI Native">🤖</th>
+                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+                      <Tooltip text="Ships Fast - high commit velocity">⚡</Tooltip>
+                    </th>
+                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">
+                      <Tooltip text="AI Native - works with AI tools">🤖</Tooltip>
+                    </th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Source</th>
                   </tr>
