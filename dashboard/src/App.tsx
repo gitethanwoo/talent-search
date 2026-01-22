@@ -47,6 +47,7 @@ interface Prospect {
   bio: string | null
   comp_fit: string | null
   outreach_context: string | null
+  fit: string | null
 }
 
 interface Draft {
@@ -748,7 +749,15 @@ function ProspectRow({ p, isExpanded, onToggle, hasDraft, onDraftClick }: { p: P
           ) : <span className="text-zinc-800">—</span>}
         </td>
         <td className="py-3 px-4">
-          <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
+          <div className="flex items-center gap-2">
+            <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
+            {p.fit === 'unlikely' && (
+              <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 border bg-zinc-800 text-zinc-500 border-zinc-700">unlikely</span>
+            )}
+            {p.fit === 'likely' && (
+              <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">likely</span>
+            )}
+          </div>
         </td>
                 <td className="py-3 px-4">
           <div className="flex items-center gap-2">
@@ -789,11 +798,19 @@ function ProspectRow({ p, isExpanded, onToggle, hasDraft, onDraftClick }: { p: P
               color="emerald"
               action={{ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter }}
             />
-            <ActionButton
-              label="Reject"
-              color="red"
-              action={{ action: 'reject', username: p.github_username, name: p.name }}
-            />
+            {p.fit !== 'unlikely' ? (
+              <ActionButton
+                label="Unlikely"
+                color="red"
+                action={{ action: 'set_fit', username: p.github_username, fit: 'unlikely' }}
+              />
+            ) : (
+              <ActionButton
+                label="Likely"
+                color="emerald"
+                action={{ action: 'set_fit', username: p.github_username, fit: 'likely' }}
+              />
+            )}
           </div>
         </td>
       </tr>
@@ -1011,12 +1028,10 @@ function App() {
         </header>
 
         {/* Stats */}
-        <div className="grid grid-cols-7 gap-3 mb-12">
+        <div className="grid grid-cols-5 gap-3 mb-12">
           <StatCard value={data.stats.prospects} label="Total" />
           <StatCard value={contactableCount} label="Contactable" accent="bg-cyan-500" />
           <StatCard value={data.stats.high_signal} label="High Signal" accent="bg-emerald-500" />
-          <StatCard value={data.stats.ships_fast} label="Ships Fast" accent="bg-blue-500" />
-          <StatCard value={data.stats.ai_native} label="AI Native" accent="bg-violet-500" />
           <StatCard value={data.stats.sources} label="Sources" accent="bg-amber-500" />
           <StatCard value={data.stats.rejected} label="Rejected" />
         </div>

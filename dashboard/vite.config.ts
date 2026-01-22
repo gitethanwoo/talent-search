@@ -30,9 +30,10 @@ function getDbData() {
     prospects: query(`
       SELECT id, github_username, name, email, twitter, location, company,
              signal, ships_fast, ai_native, source, outreach_status,
-             notes, comp_fit, outreach_context, bio
+             notes, comp_fit, outreach_context, bio, fit
       FROM prospects
-      ORDER BY CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
+      ORDER BY CASE fit WHEN 'unlikely' THEN 2 ELSE 1 END,
+               CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
                ships_fast DESC
     `),
     drafts: query(`
@@ -322,6 +323,15 @@ INSTRUCTIONS:
    WHERE id=${action.draftId}"
 
 5. Confirm what you changed and why.`
+              } else if (action.action === 'set_fit') {
+                // Direct DB update, no Claude needed
+                const db = new Database(DB_PATH)
+                db.prepare(`UPDATE prospects SET fit = ? WHERE github_username = ?`).run(action.fit, action.username)
+                db.close()
+                console.log(`\x1b[32m[FIT]\x1b[0m Set ${action.username} to ${action.fit}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+                return
               } else if (action.action === 'research') {
                 const source = action.source || 'any'
                 prompt = `/prospect-researcher
