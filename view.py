@@ -54,7 +54,7 @@ data = {
             ships_fast DESC
     """),
     "drafts": query("""
-        SELECT p.github_username, p.name, p.email, m.subject, m.body, m.channel, m.created_at
+        SELECT p.github_username, p.name, p.email, p.twitter, m.subject, m.body, m.channel, m.created_at
         FROM outreach_messages m
         JOIN prospects p ON p.id = m.prospect_id
         WHERE m.status = 'draft'
@@ -123,7 +123,7 @@ html = f'''<!DOCTYPE html>
           </div>
           <div class="flex gap-2">
             <span class="px-2 py-1 rounded text-xs bg-zinc-700">{r["channel"]}</span>
-            {f'<a href="{mailto(r["email"], r["subject"], r["body"])}" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white no-underline">Send ↗</a>' if r["email"] else '<span class="px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-500">no email</span>'}
+            {f'<a href="{mailto(r["email"], r["subject"], r["body"])}" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white no-underline">Email ↗</a>' if r["email"] else f'<a href="https://twitter.com/{r["twitter"].replace("@", "")}" target="_blank" class="px-3 py-1 rounded text-xs bg-sky-600 hover:bg-sky-500 text-white no-underline">DM on X ↗</a>' if r["twitter"] else '<span class="px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-500">no contact</span>'}
           </div>
         </summary>
         <div class="p-4 pt-0">
