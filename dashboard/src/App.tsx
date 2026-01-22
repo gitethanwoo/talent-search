@@ -152,11 +152,12 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
   const outreachClass = outreachStyles[outreachStatus] || outreachStyles.not_contacted
 
   const hasDetails = p.notes || p.bio || p.company || p.location || p.comp_fit || p.outreach_context
+  const contactable = isContactable(p)
 
   return (
     <>
       <tr
-        className={`border-t border-zinc-900 hover:bg-zinc-900/50 transition-colors group cursor-pointer ${isExpanded ? 'bg-zinc-900/50' : ''}`}
+        className={`border-t border-zinc-900 hover:bg-zinc-900/50 transition-colors group cursor-pointer ${isExpanded ? 'bg-zinc-900/50' : ''} ${!contactable ? 'opacity-50' : ''}`}
         onClick={onToggle}
       >
         <td className="py-3 px-4 font-mono text-zinc-700 text-xs">{(index + 1).toString().padStart(2, '0')}</td>
@@ -171,6 +172,9 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
           </a>
         </td>
         <td className="py-3 px-4 text-zinc-300">{p.name || <span className="text-zinc-700">—</span>}</td>
+        <td className="py-3 px-4 text-center">
+          <ContactIcons p={p} />
+        </td>
         <td className="py-3 px-4">
           {p.email ? (
             <a href={`mailto:${p.email}`} className="font-mono text-xs text-zinc-500 hover:text-emerald-400 transition-colors" onClick={e => e.stopPropagation()}>{p.email}</a>
@@ -198,8 +202,8 @@ function ProspectRow({ p, index, isExpanded, onToggle }: { p: Prospect; index: n
         </td>
       </tr>
       {hasDetails && (
-        <tr>
-          <td colSpan={9} className="p-0">
+        <tr className={!contactable ? 'opacity-50' : ''}>
+          <td colSpan={10} className="p-0">
             <div
               className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[400px] opacity-100' : 'max-h-0 opacity-0'}`}
             >
@@ -272,12 +276,52 @@ const outreachFilterLabels: Record<OutreachFilter, string> = {
   closed: 'Closed'
 }
 
+function isContactable(p: Prospect): boolean {
+  return !!(p.email || p.twitter)
+}
+
+function ContactIcons({ p }: { p: Prospect }) {
+  const hasEmail = !!p.email
+  const hasTwitter = !!p.twitter
+
+  if (!hasEmail && !hasTwitter) {
+    return <span className="text-zinc-700">—</span>
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      {hasEmail && (
+        <span title={p.email || 'Email'} className="text-emerald-400">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+            <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
+            <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
+          </svg>
+        </span>
+      )}
+      {hasTwitter && (
+        <a
+          href={`https://twitter.com/${p.twitter?.replace('@', '')}`}
+          target="_blank"
+          title={p.twitter || 'Twitter'}
+          className="text-sky-400 hover:text-sky-300 transition-colors"
+          onClick={e => e.stopPropagation()}
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
+            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+          </svg>
+        </a>
+      )}
+    </div>
+  )
+}
+
 function App() {
   const [data, setData] = useState<Data | null>(null)
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
   const [loaded, setLoaded] = useState(false)
   const [expandedProspectId, setExpandedProspectId] = useState<number | null>(null)
   const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
+  const [contactableOnly, setContactableOnly] = useState(false)
 
   useEffect(() => {
     fetch('/data.json')
@@ -299,12 +343,15 @@ function App() {
     return acc
   }, {} as Record<OutreachFilter, number>) : {} as Record<OutreachFilter, number>
 
-  // Filter prospects based on outreach status
-  const filteredProspects = data ? (
-    outreachFilter === 'all'
-      ? data.prospects
-      : data.prospects.filter(p => (p.outreach_status || 'not_contacted') === outreachFilter)
-  ) : []
+  // Compute contactable count
+  const contactableCount = data ? data.prospects.filter(isContactable).length : 0
+
+  // Filter prospects based on outreach status and contactable filter
+  const filteredProspects = data ? data.prospects.filter(p => {
+    const matchesOutreach = outreachFilter === 'all' || (p.outreach_status || 'not_contacted') === outreachFilter
+    const matchesContactable = !contactableOnly || isContactable(p)
+    return matchesOutreach && matchesContactable
+  }) : []
 
   if (!data) {
     return (
@@ -333,8 +380,9 @@ function App() {
         </header>
 
         {/* Stats */}
-        <div className="grid grid-cols-6 gap-3 mb-12">
+        <div className="grid grid-cols-7 gap-3 mb-12">
           <StatCard value={data.stats.prospects} label="Total" />
+          <StatCard value={contactableCount} label="Contactable" accent="bg-cyan-500" />
           <StatCard value={data.stats.high_signal} label="High Signal" accent="bg-emerald-500" />
           <StatCard value={data.stats.ships_fast} label="Ships Fast" accent="bg-blue-500" />
           <StatCard value={data.stats.ai_native} label="AI Native" accent="bg-violet-500" />
@@ -378,20 +426,33 @@ function App() {
         {/* Prospects Tab */}
         {tab === 'prospects' && (
           <div>
-            {/* Outreach Status Filter */}
-            <div className="mb-4 flex items-center gap-3">
-              <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Filter by status:</span>
-              <select
-                value={outreachFilter}
-                onChange={e => setOutreachFilter(e.target.value as OutreachFilter)}
-                className="font-mono text-sm bg-zinc-900 border border-zinc-800 text-zinc-300 px-3 py-2 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
-              >
-                {(Object.keys(outreachFilterLabels) as OutreachFilter[]).map(key => (
-                  <option key={key} value={key}>
-                    {outreachFilterLabels[key]} ({outreachCounts[key]})
-                  </option>
-                ))}
-              </select>
+            {/* Filters */}
+            <div className="mb-4 flex items-center gap-6">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Filter by status:</span>
+                <select
+                  value={outreachFilter}
+                  onChange={e => setOutreachFilter(e.target.value as OutreachFilter)}
+                  className="font-mono text-sm bg-zinc-900 border border-zinc-800 text-zinc-300 px-3 py-2 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
+                >
+                  {(Object.keys(outreachFilterLabels) as OutreachFilter[]).map(key => (
+                    <option key={key} value={key}>
+                      {outreachFilterLabels[key]} ({outreachCounts[key]})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer group">
+                <input
+                  type="checkbox"
+                  checked={contactableOnly}
+                  onChange={e => setContactableOnly(e.target.checked)}
+                  className="w-4 h-4 bg-zinc-900 border border-zinc-700 rounded-none text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
+                />
+                <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors">
+                  Contactable only
+                </span>
+              </label>
             </div>
             <div className="border border-zinc-900">
               <table className="w-full text-sm">
@@ -400,6 +461,7 @@ function App() {
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-12">#</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Handle</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Name</th>
+                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Contact</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
                     <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
                     <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600" title="Ships Fast">⚡</th>
