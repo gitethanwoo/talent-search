@@ -268,24 +268,7 @@ WHERE github_username = '{username}'"
 
 ---
 
-## Batch Operations
-
-### Draft for all ready prospects
-
-```bash
-# Get all enriched, not contacted, with email
-sqlite3 -header -column prospects.db "
-SELECT id, github_username, name, email, portfolio, comp_fit, outreach_context
-FROM prospects
-WHERE enriched_at IS NOT NULL
-AND outreach_status = 'not_contacted'
-AND email IS NOT NULL
-ORDER BY signal DESC"
-```
-
-Then generate personalized message for each.
-
-### Generate follow-ups
+## Follow-ups
 
 ```bash
 # Find who needs follow-up
