@@ -4,6 +4,7 @@
 import sqlite3
 import json
 import webbrowser
+import urllib.parse
 from pathlib import Path
 
 DB = Path(__file__).parent / "prospects.db"
@@ -22,6 +23,9 @@ def scalar(sql):
     result = conn.execute(sql).fetchone()[0]
     conn.close()
     return result
+
+def mailto(to, subject, body):
+    return f"mailto:{to}?subject={urllib.parse.quote(subject or '')}&body={urllib.parse.quote(body or '')}"
 
 # Gather data
 data = {
@@ -117,7 +121,10 @@ html = f'''<!DOCTYPE html>
             <span class="text-zinc-500 mx-2">—</span>
             <span class="text-zinc-400">{r["subject"]}</span>
           </div>
-          <span class="px-2 py-1 rounded text-xs bg-zinc-700">{r["channel"]}</span>
+          <div class="flex gap-2">
+            <span class="px-2 py-1 rounded text-xs bg-zinc-700">{r["channel"]}</span>
+            {f'<a href="{mailto(r["email"], r["subject"], r["body"])}" class="px-3 py-1 rounded text-xs bg-blue-600 hover:bg-blue-500 text-white no-underline">Send ↗</a>' if r["email"] else '<span class="px-2 py-1 rounded text-xs bg-zinc-800 text-zinc-500">no email</span>'}
+          </div>
         </summary>
         <div class="p-4 pt-0">
           <div class="text-zinc-500 text-xs mb-2">{r["email"] or "no email"}</div>
