@@ -109,18 +109,21 @@ html = f'''<!DOCTYPE html>
 
     <!-- Draft Messages -->
     <h2 class="text-xl font-semibold mb-4">Draft Messages ({len(data["drafts"])})</h2>
-    <div class="space-y-4 mb-10">
-      {"".join(f'''<div class="bg-zinc-900 rounded-lg p-4">
-        <div class="flex justify-between items-start mb-3">
+    <div class="space-y-2 mb-10">
+      {"".join(f'''<details class="bg-zinc-900 rounded-lg">
+        <summary class="p-3 cursor-pointer hover:bg-zinc-800 rounded-lg flex justify-between items-center">
           <div>
             <span class="font-semibold">{r["name"] or r["github_username"]}</span>
-            <span class="text-zinc-500 ml-2">{r["email"] or ""}</span>
+            <span class="text-zinc-500 mx-2">—</span>
+            <span class="text-zinc-400">{r["subject"]}</span>
           </div>
           <span class="px-2 py-1 rounded text-xs bg-zinc-700">{r["channel"]}</span>
+        </summary>
+        <div class="p-4 pt-0">
+          <div class="text-zinc-500 text-xs mb-2">{r["email"] or "no email"}</div>
+          <div class="bg-zinc-800 rounded p-3 text-sm whitespace-pre-wrap">{r["body"]}</div>
         </div>
-        <div class="text-zinc-400 text-sm mb-2">Subject: {r["subject"]}</div>
-        <div class="bg-zinc-800 rounded p-3 text-sm whitespace-pre-wrap font-mono">{r["body"]}</div>
-      </div>''' for r in data["drafts"]) or '<div class="bg-zinc-900 rounded-lg p-4 text-zinc-500">No drafts</div>'}
+      </details>''' for r in data["drafts"]) or '<div class="bg-zinc-900 rounded-lg p-4 text-zinc-500">No drafts</div>'}
     </div>
 
     <!-- Outreach Pipeline -->
