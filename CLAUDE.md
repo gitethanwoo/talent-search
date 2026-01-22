@@ -1,4 +1,4 @@
-# TeneX - Prospect Researcher
+# Tenex - Prospect Researcher
 
 Finding high-velocity AI engineers who'd thrive on uncapped performance-based pay.
 

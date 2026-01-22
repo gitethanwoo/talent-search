@@ -1,9 +1,9 @@
-# TeneX - What We're Selling
+# Tenex - What We're Selling
 
 ## One Sentence
-TeneX helps businesses build their AI strategy, then we make it happen.
+Tenex helps businesses build their AI strategy, then we make it happen.
 
-## What TeneX Is
+## What Tenex Is
 AI-powered software development agency. But NOT a typical dev shop:
 - We hire the best (one world-class engineer > 10 mediocre ones)
 - We use AI (all off-the-shelf tools + build our own)

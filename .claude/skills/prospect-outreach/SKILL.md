@@ -58,13 +58,13 @@ ORDER BY m.sent_at"
 
 ---
 
-## TeneX Context
+## Tenex Context
 
 **Read [references/tenex-pitch.md](references/tenex-pitch.md) for full pitch details, objection handling, and hooks.**
 
 ### Quick Summary
 
-TeneX = AI-powered dev agency, but different:
+Tenex = AI-powered dev agency, but different:
 - Hire the best (not cheap talent)
 - Charge clients on outcomes (story points)
 - Pay engineers on outcomes (story points = $, uncapped)
@@ -92,7 +92,7 @@ TeneX = AI-powered dev agency, but different:
 
 2. **Pick the strongest hook from their context:**
    - What specific project/tweet/post to reference?
-   - Which TeneX hook fits them? (variety? meritocracy? elite peers? AI-native?)
+   - Which Tenex hook fits them? (variety? meritocracy? elite peers? AI-native?)
    - What's their likely objection? (intensity? NYC? too good to be true?)
 
 3. **Draft using structure:**

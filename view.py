@@ -63,7 +63,7 @@ html = f'''<!DOCTYPE html>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>TeneX Prospects</title>
+  <title>Tenex Prospects</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script>
     tailwind.config = {{
@@ -77,7 +77,7 @@ html = f'''<!DOCTYPE html>
 </head>
 <body class="bg-dark text-gray-100 min-h-screen p-8">
   <div class="max-w-7xl mx-auto">
-    <h1 class="text-3xl font-bold mb-8">TeneX Prospects</h1>
+    <h1 class="text-3xl font-bold mb-8">Tenex Prospects</h1>
 
     <!-- Stats -->
     <div class="grid grid-cols-6 gap-4 mb-10">

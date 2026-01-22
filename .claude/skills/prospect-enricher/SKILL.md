@@ -94,7 +94,7 @@ For each prospect, work through EVERY item. Use TodoWrite to track progress. Mar
 - [ ] Recent blog posts or tweets (topics they care about)
 - [ ] Projects they're proud of (mention specifically)
 - [ ] Shared interests or connections
-- [ ] Why TeneX specifically fits them
+- [ ] Why Tenex specifically fits them
 
 **Best outreach channel:**
 - [ ] Email (if have it) - usually best
