@@ -4,11 +4,14 @@ import { isContactable } from '../../utils'
 interface ProspectListItemProps {
   p: Prospect
   isSelected: boolean
+  isChecked: boolean
   onClick: () => void
+  onCheck: (checked: boolean) => void
   hasDraft: boolean
+  showCheckbox: boolean
 }
 
-export function ProspectListItem({ p, isSelected, onClick, hasDraft }: ProspectListItemProps) {
+export function ProspectListItem({ p, isSelected, isChecked, onClick, onCheck, hasDraft, showCheckbox }: ProspectListItemProps) {
   const signalColors = {
     high: 'bg-emerald-500',
     medium: 'bg-amber-500',
@@ -24,6 +27,18 @@ export function ProspectListItem({ p, isSelected, onClick, hasDraft }: ProspectL
       } ${!contactable ? 'opacity-50' : ''}`}
     >
       <div className="flex items-center gap-3">
+        {showCheckbox && (
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={e => {
+              e.stopPropagation()
+              onCheck(e.target.checked)
+            }}
+            onClick={e => e.stopPropagation()}
+            className="w-4 h-4 bg-zinc-900 border border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500 flex-shrink-0"
+          />
+        )}
         <img
           src={`https://github.com/${p.github_username}.png?size=40`}
           alt=""

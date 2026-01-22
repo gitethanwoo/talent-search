@@ -43,6 +43,8 @@ function App() {
   const [selectedProspectId, setSelectedProspectId] = useState<number | null>(null)
   const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
   const [contactableOnly, setContactableOnly] = useState(false)
+  const [bulkMode, setBulkMode] = useState(false)
+  const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
 
   const fetchData = () => {
     fetch('/api/data')
@@ -78,6 +80,41 @@ function App() {
     const matchesContactable = !contactableOnly || isContactable(p)
     return matchesOutreach && matchesContactable
   }) : []
+
+  // Bulk action handlers
+  const handleBulkEnrich = () => {
+    const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
+    prospects.forEach(p => {
+      fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'enrich', username: p.github_username, name: p.name })
+      })
+    })
+    setCheckedIds(new Set())
+    setBulkMode(false)
+  }
+
+  const handleBulkDraft = () => {
+    const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
+    prospects.forEach(p => {
+      fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter })
+      })
+    })
+    setCheckedIds(new Set())
+    setBulkMode(false)
+  }
+
+  const handleSelectAll = () => {
+    if (checkedIds.size === filteredProspects.length) {
+      setCheckedIds(new Set())
+    } else {
+      setCheckedIds(new Set(filteredProspects.map(p => p.id)))
+    }
+  }
 
   if (!data) {
     return (
@@ -177,18 +214,77 @@ function App() {
                     </option>
                   ))}
                 </select>
-                <label className="flex items-center gap-2 cursor-pointer group">
-                  <input
-                    type="checkbox"
-                    checked={contactableOnly}
-                    onChange={e => setContactableOnly(e.target.checked)}
-                    className="w-3 h-3 bg-zinc-900 border border-zinc-700 rounded-none text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
-                  />
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors">
-                    Contactable only
-                  </span>
-                </label>
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 cursor-pointer group">
+                    <input
+                      type="checkbox"
+                      checked={contactableOnly}
+                      onChange={e => setContactableOnly(e.target.checked)}
+                      className="w-3 h-3 bg-zinc-900 border border-zinc-700 rounded-none text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
+                    />
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors">
+                      Contactable only
+                    </span>
+                  </label>
+                  <button
+                    onClick={() => {
+                      setBulkMode(!bulkMode)
+                      if (bulkMode) setCheckedIds(new Set())
+                    }}
+                    className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border transition-all ${
+                      bulkMode
+                        ? 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30'
+                        : 'text-zinc-600 border-zinc-800 hover:text-zinc-400 hover:border-zinc-700'
+                    }`}
+                  >
+                    {bulkMode ? 'Cancel' : 'Select'}
+                  </button>
+                </div>
               </div>
+
+              {/* Bulk Actions Bar */}
+              {bulkMode && checkedIds.size > 0 && (
+                <div className="p-3 border-b border-zinc-900 bg-zinc-900/50 flex items-center justify-between flex-shrink-0">
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSelectAll}
+                      className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
+                    >
+                      {checkedIds.size === filteredProspects.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                    <span className="font-mono text-[10px] text-zinc-600">
+                      {checkedIds.size} selected
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleBulkEnrich}
+                      className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
+                    >
+                      Enrich All
+                    </button>
+                    <button
+                      onClick={handleBulkDraft}
+                      className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                    >
+                      Draft All
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Select All when in bulk mode but none selected */}
+              {bulkMode && checkedIds.size === 0 && (
+                <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0">
+                  <button
+                    onClick={handleSelectAll}
+                    className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 hover:text-zinc-300 transition-colors"
+                  >
+                    Select All ({filteredProspects.length})
+                  </button>
+                </div>
+              )}
+
               {/* List */}
               <div className="flex-1 overflow-y-auto">
                 {filteredProspects.map((p) => (
@@ -196,8 +292,16 @@ function App() {
                     key={p.id}
                     p={p}
                     isSelected={selectedProspectId === p.id}
+                    isChecked={checkedIds.has(p.id)}
                     onClick={() => setSelectedProspectId(p.id)}
+                    onCheck={(checked) => {
+                      const newSet = new Set(checkedIds)
+                      if (checked) newSet.add(p.id)
+                      else newSet.delete(p.id)
+                      setCheckedIds(newSet)
+                    }}
                     hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
+                    showCheckbox={bulkMode}
                   />
                 ))}
               </div>
