@@ -30,7 +30,7 @@ function getDbData() {
     prospects: query(`
       SELECT id, github_username, name, email, twitter, location, company,
              signal, ships_fast, ai_native, source, outreach_status,
-             notes, comp_fit, outreach_context, bio, fit
+             notes, comp_fit, outreach_context, bio, fit, enriched_at
       FROM prospects
       ORDER BY CASE fit WHEN 'unlikely' THEN 2 ELSE 1 END,
                CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
@@ -329,6 +329,15 @@ INSTRUCTIONS:
                 db.prepare(`UPDATE prospects SET fit = ? WHERE github_username = ?`).run(action.fit, action.username)
                 db.close()
                 console.log(`\x1b[32m[FIT]\x1b[0m Set ${action.username} to ${action.fit}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+                return
+              } else if (action.action === 'update_draft') {
+                // Direct DB update for draft edits
+                const db = new Database(DB_PATH)
+                db.prepare(`UPDATE outreach_messages SET subject = ?, body = ? WHERE id = ?`).run(action.subject, action.body, action.draftId)
+                db.close()
+                console.log(`\x1b[32m[DRAFT]\x1b[0m Updated draft ${action.draftId}`)
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true }))
                 return

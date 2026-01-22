@@ -1,5 +1,4 @@
 import { useState, useEffect } from 'react'
-import type { ReactNode } from 'react'
 import TaskViewerPage from './components/TaskViewer'
 
 interface StreamEvent {
@@ -48,6 +47,7 @@ interface Prospect {
   comp_fit: string | null
   outreach_context: string | null
   fit: string | null
+  enriched_at: string | null
 }
 
 interface Draft {
@@ -80,49 +80,6 @@ function mailto(to: string, subject: string, body: string) {
   return `mailto:${to}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 
-function Tooltip({ children, text }: { children: ReactNode; text: string }) {
-  const [show, setShow] = useState(false)
-  const [delayedShow, setDelayedShow] = useState(false)
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout>
-    if (show) {
-      timer = setTimeout(() => setDelayedShow(true), 300)
-    } else {
-      setDelayedShow(false)
-    }
-    return () => clearTimeout(timer)
-  }, [show])
-
-  return (
-    <span
-      className="relative inline-flex"
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {children}
-      {delayedShow && (
-        <span className="absolute z-50 bottom-full left-1/2 -translate-x-1/2 mb-2 px-2 py-1 text-xs font-mono bg-zinc-800 text-zinc-200 border border-zinc-700 whitespace-nowrap">
-          {text}
-        </span>
-      )}
-    </span>
-  )
-}
-
-function StatCard({ value, label, accent }: { value: number; label: string; accent?: string }) {
-  return (
-    <div className="group relative">
-      <div className={`absolute inset-0 ${accent || 'bg-zinc-700'} opacity-0 group-hover:opacity-100 transition-opacity duration-300`} style={{ clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)' }} />
-      <div className="relative border border-zinc-800 bg-zinc-950 p-4 transition-all duration-300 group-hover:border-zinc-600" style={{ clipPath: 'polygon(0 0, 100% 0, 100% calc(100% - 4px), calc(100% - 4px) 100%, 0 100%)' }}>
-        <div className={`font-mono text-4xl font-bold tracking-tighter ${accent ? accent.replace('bg-', 'text-') : 'text-zinc-300'}`}>
-          {value.toString().padStart(2, '0')}
-        </div>
-        <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-600 mt-1">{label}</div>
-      </div>
-    </div>
-  )
-}
 
 function DraftCard({ draft, index }: { draft: Draft; index: number }) {
   const [open, setOpen] = useState(false)
@@ -240,7 +197,7 @@ function ActionButton({ label, color, action }: { label: string; color: 'cyan' |
   return (
     <button
       onClick={handleClick}
-      className={`font-mono text-[9px] uppercase tracking-wider px-2 py-1 border transition-all duration-150 active:scale-95 ${colorStyles[color]} ${clicked ? 'bg-white/10' : ''}`}
+      className={`font-mono text-xs uppercase tracking-wider px-4 py-2 border transition-all duration-150 active:scale-95 ${colorStyles[color]} ${clicked ? 'bg-white/10' : ''}`}
     >
       {clicked ? '✓ Sent' : label}
     </button>
@@ -407,7 +364,7 @@ function StreamEventView({ event }: { event: StreamEvent }) {
 type PanelMode = 'minimized' | 'normal' | 'expanded'
 type TaskView = 'active' | 'history'
 
-function TaskPanel({ onViewProspect }: { onViewProspect?: (username: string) => void }) {
+function TaskPanel() {
   const [tasks, setTasks] = useState<AgentTask[]>([])
   const [mode, setMode] = useState<PanelMode>('normal')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
@@ -714,7 +671,200 @@ function TaskPanel({ onViewProspect }: { onViewProspect?: (username: string) => 
   )
 }
 
-function ProspectRow({ p, isExpanded, onToggle, hasDraft, onDraftClick }: { p: Prospect; isExpanded: boolean; onToggle: () => void; hasDraft: boolean; onDraftClick?: () => void }) {
+// Compact list item for split view
+function ProspectListItem({ p, isSelected, onClick, hasDraft }: { p: Prospect; isSelected: boolean; onClick: () => void; hasDraft: boolean }) {
+  const signalColors = {
+    high: 'bg-emerald-500',
+    medium: 'bg-amber-500',
+    low: 'bg-zinc-600'
+  }
+  const contactable = isContactable(p)
+
+  return (
+    <div
+      onClick={onClick}
+      className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-all ${
+        isSelected ? 'bg-zinc-800/70 border-l-2 border-l-cyan-500' : 'hover:bg-zinc-900/50 border-l-2 border-l-transparent'
+      } ${!contactable ? 'opacity-50' : ''}`}
+    >
+      <div className="flex items-center gap-3">
+        <img
+          src={`https://github.com/${p.github_username}.png?size=40`}
+          alt=""
+          className="w-8 h-8 rounded-full bg-zinc-800 flex-shrink-0"
+        />
+        <span className={`w-2 h-2 rounded-full flex-shrink-0 ${signalColors[p.signal as keyof typeof signalColors] || signalColors.low}`} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-sm text-zinc-300 truncate">{p.name || p.github_username}</span>
+            {hasDraft && <span className="font-mono text-[9px] uppercase tracking-wider px-1.5 py-0.5 bg-amber-500/20 text-amber-400 border border-amber-500/30">draft</span>}
+          </div>
+          <div className="flex items-center gap-2 mt-0.5">
+            <span className="font-mono text-[10px] text-zinc-600">@{p.github_username}</span>
+            {p.company && <span className="font-mono text-[10px] text-zinc-700 truncate">· {p.company}</span>}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Editable draft component
+function EditableDraft({ draft, prospect, onRewrite }: { draft: Draft; prospect: Prospect; onRewrite: () => void }) {
+  const [subject, setSubject] = useState(draft.subject)
+  const [body, setBody] = useState(draft.body)
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const hasChanges = subject !== draft.subject || body !== draft.body
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'update_draft',
+          draftId: draft.id,
+          subject,
+          body
+        })
+      })
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleDiscard = () => {
+    setSubject(draft.subject)
+    setBody(draft.body)
+  }
+
+  return (
+    <div className="border border-zinc-800 bg-zinc-900/30">
+      {/* Subject */}
+      <div className="px-4 py-3 border-b border-zinc-800">
+        <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Subject</div>
+        <input
+          type="text"
+          value={subject}
+          onChange={e => setSubject(e.target.value)}
+          className="w-full bg-transparent text-amber-400 outline-none border-b border-transparent focus:border-amber-500/50 transition-colors"
+        />
+      </div>
+      {/* Body */}
+      <div className="px-4 py-4">
+        <textarea
+          value={body}
+          onChange={e => setBody(e.target.value)}
+          rows={Math.max(6, body.split('\n').length + 2)}
+          className="w-full bg-transparent text-sm text-zinc-300 leading-relaxed outline-none resize-y min-h-[150px]"
+        />
+      </div>
+      {/* Actions */}
+      <div className="px-4 py-3 border-t border-zinc-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          {prospect.email ? (
+            <a
+              href={mailto(prospect.email, subject, body)}
+              className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+            >
+              Send Email
+            </a>
+          ) : prospect.twitter ? (
+            <a
+              href={`https://twitter.com/${prospect.twitter.replace('@', '')}`}
+              target="_blank"
+              className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-sky-500/20 text-sky-400 border border-sky-500/30 hover:bg-sky-500/30 transition-all"
+            >
+              DM on X
+            </a>
+          ) : (
+            <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">No contact method</span>
+          )}
+          <button
+            onClick={onRewrite}
+            className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 text-zinc-500 border border-zinc-700 hover:text-amber-400 hover:border-amber-500/50 transition-all"
+          >
+            Rewrite
+          </button>
+        </div>
+        <div className="flex items-center gap-2">
+          {hasChanges && (
+            <>
+              <button
+                onClick={handleDiscard}
+                className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 text-zinc-500 hover:text-zinc-300 transition-all"
+              >
+                Discard
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all disabled:opacity-50"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+            </>
+          )}
+          {saved && (
+            <span className="font-mono text-[10px] uppercase tracking-wider text-emerald-400">Saved</span>
+          )}
+          {!hasChanges && !saved && (
+            <span className="font-mono text-[10px] text-zinc-700">{draft.channel}</span>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Pipeline progress indicator
+function PipelineProgress({ prospect, hasDraft }: { prospect: Prospect; hasDraft: boolean }) {
+  const stages = [
+    { key: 'found', label: 'Found', complete: true },
+    { key: 'enriched', label: 'Enriched', complete: !!prospect.enriched_at },
+    { key: 'drafted', label: 'Drafted', complete: hasDraft },
+    { key: 'contacted', label: 'Contacted', complete: ['in_progress', 'replied', 'interested', 'closed'].includes(prospect.outreach_status || '') },
+    { key: 'replied', label: 'Replied', complete: ['replied', 'interested'].includes(prospect.outreach_status || '') },
+  ]
+
+  return (
+    <div className="flex items-center gap-1">
+      {stages.map((stage, i) => (
+        <div key={stage.key} className="flex items-center">
+          <div className="flex flex-col items-center">
+            <div
+              className={`w-2.5 h-2.5 rounded-full border-2 transition-colors ${
+                stage.complete
+                  ? 'bg-cyan-500 border-cyan-500'
+                  : 'bg-transparent border-zinc-700'
+              }`}
+            />
+            <span className={`font-mono text-[8px] uppercase tracking-wider mt-1 ${
+              stage.complete ? 'text-zinc-400' : 'text-zinc-700'
+            }`}>
+              {stage.label}
+            </span>
+          </div>
+          {i < stages.length - 1 && (
+            <div className={`w-6 h-0.5 mx-1 -mt-3 ${
+              stage.complete && stages[i + 1].complete ? 'bg-cyan-500' : 'bg-zinc-800'
+            }`} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// Full profile panel
+function ProspectProfile({ p, drafts, onDraftClick }: { p: Prospect; drafts: Draft[]; onDraftClick: (draft: Draft) => void }) {
+  const prospectDrafts = drafts.filter(d => d.github_username === p.github_username)
+
   const signalStyles = {
     high: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     medium: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
@@ -722,171 +872,140 @@ function ProspectRow({ p, isExpanded, onToggle, hasDraft, onDraftClick }: { p: P
   }
   const signalClass = signalStyles[p.signal as keyof typeof signalStyles] || signalStyles.low
 
-  const outreachStyles: Record<string, string> = {
-    not_contacted: 'bg-zinc-800 text-zinc-500 border-zinc-700',
-    in_progress: 'bg-amber-500/20 text-amber-400 border-amber-500/30',
-    replied: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
-    interested: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
-    closed: 'bg-red-500/20 text-red-400 border-red-500/30'
-  }
-  const outreachStatus = p.outreach_status || 'not_contacted'
-  const outreachClass = outreachStyles[outreachStatus] || outreachStyles.not_contacted
-
-  const hasDetails = p.notes || p.bio || p.company || p.location || p.comp_fit || p.outreach_context
-  const contactable = isContactable(p)
-
   return (
-    <>
-      <tr
-        className={`border-t border-zinc-900 hover:bg-zinc-900/50 transition-colors group cursor-pointer ${isExpanded ? 'bg-zinc-900/50' : ''} ${!contactable ? 'opacity-50' : ''}`}
-        onClick={onToggle}
-      >
-        <td className="py-3 px-4">
-          <a
-            href={`https://github.com/${p.github_username}`}
-            className="font-mono text-sm text-zinc-400 hover:text-white transition-colors"
-            target="_blank"
-            onClick={e => e.stopPropagation()}
-          >
-            @{p.github_username}
-          </a>
-        </td>
-        <td className="py-3 px-4 text-zinc-300">{p.name || <span className="text-zinc-700">—</span>}</td>
-        <td className="py-3 px-4 text-center">
-          <ContactIcons p={p} />
-        </td>
-        <td className="py-3 px-4">
-          {p.email ? (
-            <a href={`mailto:${p.email}`} className="font-mono text-xs text-zinc-500 hover:text-emerald-400 transition-colors" onClick={e => e.stopPropagation()}>{p.email}</a>
-          ) : <span className="text-zinc-800">—</span>}
-        </td>
-        <td className="py-3 px-4">
-          <div className="flex items-center gap-2">
-            <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border ${signalClass}`}>{p.signal}</span>
-            {p.fit === 'unlikely' && (
-              <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 border bg-zinc-800 text-zinc-500 border-zinc-700">unlikely</span>
-            )}
-            {p.fit === 'likely' && (
-              <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">likely</span>
-            )}
-          </div>
-        </td>
-                <td className="py-3 px-4">
-          <div className="flex items-center gap-2">
-            <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-1 border whitespace-nowrap ${outreachClass}`}>{outreachStatus.replace('_', ' ')}</span>
-            {hasDraft && (
-              <Tooltip text="Draft ready - click to view">
-                <button
-                  onClick={(e) => { e.stopPropagation(); onDraftClick?.() }}
-                  className="text-amber-400 hover:text-amber-300 transition-colors"
+    <div>
+      {/* Header */}
+      <div className="px-6 py-5 border-b border-zinc-800">
+        <div className="flex items-start justify-between">
+          {/* Left: Avatar + Name */}
+          <div className="flex items-start gap-4">
+            <img
+              src={`https://github.com/${p.github_username}.png?size=80`}
+              alt=""
+              className="w-14 h-14 rounded-full bg-zinc-800 flex-shrink-0"
+            />
+            <div>
+              <h2 className="text-xl font-medium text-white">{p.name || p.github_username}</h2>
+              <div className="flex items-center gap-3 mt-1.5">
+                <a
+                  href={`https://github.com/${p.github_username}`}
+                  target="_blank"
+                  className="flex items-center gap-1.5 font-mono text-sm text-zinc-500 hover:text-cyan-400 transition-colors"
                 >
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                    <path d="M2.695 14.763l-1.262 3.154a.5.5 0 00.65.65l3.155-1.262a4 4 0 001.343-.885L17.5 5.5a2.121 2.121 0 00-3-3L3.58 13.42a4 4 0 00-.885 1.343z" />
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0024 12c0-6.63-5.37-12-12-12z"/>
                   </svg>
-                </button>
-              </Tooltip>
-            )}
-          </div>
-        </td>
-        <td className="py-3 px-4 max-w-[140px]">
-          <div className="flex items-center gap-2">
-            <Tooltip text={p.source || ''}>
-              <span className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider truncate block max-w-[120px]">{p.source || '—'}</span>
-            </Tooltip>
-            {hasDetails && (
-              <span className={`font-mono text-zinc-600 transition-transform duration-200 flex-shrink-0 ${isExpanded ? 'rotate-90' : ''}`}>▸</span>
-            )}
-          </div>
-        </td>
-        <td className="py-3 px-4">
-          <div className="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-            <ActionButton
-              label="Enrich"
-              color="cyan"
-              action={{ action: 'enrich', username: p.github_username, name: p.name }}
-            />
-            <ActionButton
-              label="Draft"
-              color="emerald"
-              action={{ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter }}
-            />
-            {p.fit !== 'unlikely' ? (
-              <ActionButton
-                label="Unlikely"
-                color="red"
-                action={{ action: 'set_fit', username: p.github_username, fit: 'unlikely' }}
-              />
-            ) : (
-              <ActionButton
-                label="Likely"
-                color="emerald"
-                action={{ action: 'set_fit', username: p.github_username, fit: 'likely' }}
-              />
-            )}
-          </div>
-        </td>
-      </tr>
-      {hasDetails && (
-        <tr className={!contactable ? 'opacity-50' : ''}>
-          <td colSpan={8} className="p-0">
-            <div
-              className={`overflow-hidden transition-all duration-300 ease-in-out ${isExpanded ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'}`}
-            >
-              <div className="px-4 py-4 pl-12 bg-zinc-900/30 border-t border-zinc-800/50">
-                <div className="grid grid-cols-2 gap-6">
-                  {/* Left column - Basic info */}
-                  <div className="space-y-3">
-                    {p.bio && (
-                      <div>
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Bio</div>
-                        <div className="text-sm text-zinc-400">{p.bio}</div>
-                      </div>
-                    )}
-                    {(p.company || p.location) && (
-                      <div className="flex gap-6">
-                        {p.company && (
-                          <div>
-                            <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Company</div>
-                            <div className="text-sm text-zinc-300">{p.company}</div>
-                          </div>
-                        )}
-                        {p.location && (
-                          <div>
-                            <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Location</div>
-                            <div className="text-sm text-zinc-300">{p.location}</div>
-                          </div>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                  {/* Right column - Evidence/notes */}
-                  <div className="space-y-3">
-                    {p.notes && (
-                      <div>
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Notes / Evidence</div>
-                        <div className="text-sm text-zinc-400 whitespace-pre-wrap">{p.notes}</div>
-                      </div>
-                    )}
-                    {p.comp_fit && (
-                      <div>
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Comp Fit</div>
-                        <div className="text-sm text-zinc-400">{p.comp_fit}</div>
-                      </div>
-                    )}
-                    {p.outreach_context && (
-                      <div>
-                        <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Outreach Context</div>
-                        <div className="text-sm text-zinc-400">{p.outreach_context}</div>
-                      </div>
-                    )}
-                  </div>
-                </div>
+                  {p.github_username}
+                </a>
+                {p.company && <span className="text-sm text-zinc-600">{p.company}</span>}
+                {p.location && <span className="text-sm text-zinc-600">{p.location}</span>}
               </div>
             </div>
-          </td>
-        </tr>
-      )}
-    </>
+          </div>
+
+          {/* Right: Pipeline progress */}
+          <div className="flex-shrink-0">
+            <PipelineProgress prospect={p} hasDraft={prospectDrafts.length > 0} />
+          </div>
+        </div>
+
+        {/* Action buttons - bigger */}
+        <div className="flex items-center gap-3 mt-5">
+          <ActionButton label="Enrich" color="cyan" action={{ action: 'enrich', username: p.github_username, name: p.name }} />
+          <ActionButton label="Draft" color="emerald" action={{ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter }} />
+          {p.fit !== 'unlikely' ? (
+            <ActionButton label="Mark Unlikely" color="red" action={{ action: 'set_fit', username: p.github_username, fit: 'unlikely' }} />
+          ) : (
+            <ActionButton label="Mark Likely" color="emerald" action={{ action: 'set_fit', username: p.github_username, fit: 'likely' }} />
+          )}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-6">
+        <div className="space-y-6">
+          {/* Signal & Fit */}
+          <div className="grid grid-cols-2 gap-6">
+            <div className="p-4 border border-zinc-800 bg-zinc-900/30">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</div>
+                <span className={`font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border ${signalClass}`}>{p.signal}</span>
+              </div>
+              <div className="text-sm text-zinc-400 leading-relaxed">
+                {p.notes || 'No signal notes recorded yet.'}
+              </div>
+            </div>
+            <div className="p-4 border border-zinc-800 bg-zinc-900/30">
+              <div className="flex items-center gap-2 mb-2">
+                <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Fit</div>
+                {p.fit === 'likely' && (
+                  <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border bg-emerald-500/20 text-emerald-400 border-emerald-500/30">likely</span>
+                )}
+                {p.fit === 'unlikely' && (
+                  <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border bg-zinc-800 text-zinc-500 border-zinc-700">unlikely</span>
+                )}
+                {!p.fit && (
+                  <span className="font-mono text-[10px] uppercase tracking-wider px-2 py-0.5 border border-zinc-700 text-zinc-600">unknown</span>
+                )}
+              </div>
+              <div className="text-sm text-zinc-400 leading-relaxed">
+                {p.comp_fit || 'No fit assessment recorded yet.'}
+              </div>
+            </div>
+          </div>
+
+          {/* Contact Info */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Email</div>
+              {p.email ? (
+                <a href={`mailto:${p.email}`} className="text-sm text-cyan-400 hover:text-cyan-300 transition-colors">{p.email}</a>
+              ) : (
+                <span className="text-sm text-zinc-700">Not found</span>
+              )}
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Twitter</div>
+              {p.twitter ? (
+                <a href={`https://twitter.com/${p.twitter.replace('@', '')}`} target="_blank" className="text-sm text-sky-400 hover:text-sky-300 transition-colors">{p.twitter}</a>
+              ) : (
+                <span className="text-sm text-zinc-700">Not found</span>
+              )}
+            </div>
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Source</div>
+              <span className="text-sm text-zinc-500">{p.source || '—'}</span>
+            </div>
+          </div>
+
+          {/* Bio */}
+          {p.bio && (
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Bio</div>
+              <div className="text-sm text-zinc-300 leading-relaxed">{p.bio}</div>
+            </div>
+          )}
+
+          {/* Outreach Context */}
+          {p.outreach_context && (
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Outreach Context</div>
+              <div className="text-sm text-zinc-400 leading-relaxed">{p.outreach_context}</div>
+            </div>
+          )}
+
+          {/* Drafts */}
+          {prospectDrafts.length > 0 && (
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-3">Draft Message</div>
+              {prospectDrafts.map(draft => (
+                <EditableDraft key={draft.id} draft={draft} prospect={p} onRewrite={() => onDraftClick(draft)} />
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -905,41 +1024,6 @@ function isContactable(p: Prospect): boolean {
   return !!(p.email || p.twitter)
 }
 
-function ContactIcons({ p }: { p: Prospect }) {
-  const hasEmail = !!p.email
-  const hasTwitter = !!p.twitter
-
-  if (!hasEmail && !hasTwitter) {
-    return <span className="text-zinc-700">—</span>
-  }
-
-  return (
-    <div className="flex items-center gap-1.5">
-      {hasEmail && (
-        <span title={p.email || 'Email'} className="text-emerald-400">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-            <path d="M3 4a2 2 0 00-2 2v1.161l8.441 4.221a1.25 1.25 0 001.118 0L19 7.162V6a2 2 0 00-2-2H3z" />
-            <path d="M19 8.839l-7.77 3.885a2.75 2.75 0 01-2.46 0L1 8.839V14a2 2 0 002 2h14a2 2 0 002-2V8.839z" />
-          </svg>
-        </span>
-      )}
-      {hasTwitter && (
-        <a
-          href={`https://twitter.com/${p.twitter?.replace('@', '')}`}
-          target="_blank"
-          title={p.twitter || 'Twitter'}
-          className="text-sky-400 hover:text-sky-300 transition-colors"
-          onClick={e => e.stopPropagation()}
-        >
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-4 h-4">
-            <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
-          </svg>
-        </a>
-      )}
-    </div>
-  )
-}
-
 function App() {
   // Simple routing: /components shows the component preview page
   const isComponentPage = window.location.pathname === '/components' || window.location.search.includes('view=components')
@@ -952,7 +1036,7 @@ function App() {
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
   const [draftModal, setDraftModal] = useState<Draft | null>(null)
   const [loaded, setLoaded] = useState(false)
-  const [expandedProspectId, setExpandedProspectId] = useState<number | null>(null)
+  const [selectedProspectId, setSelectedProspectId] = useState<number | null>(null)
   const [outreachFilter, setOutreachFilter] = useState<OutreachFilter>('all')
   const [contactableOnly, setContactableOnly] = useState(false)
 
@@ -983,10 +1067,9 @@ function App() {
     return acc
   }, {} as Record<OutreachFilter, number>) : {} as Record<OutreachFilter, number>
 
-  // Compute contactable count
-  const contactableCount = data ? data.prospects.filter(isContactable).length : 0
-
   // Filter prospects based on outreach status and contactable filter
+  const selectedProspect = data && selectedProspectId ? data.prospects.find(p => p.id === selectedProspectId) : null
+
   const filteredProspects = data ? data.prospects.filter(p => {
     const matchesOutreach = outreachFilter === 'all' || (p.outreach_status || 'not_contacted') === outreachFilter
     const matchesContactable = !contactableOnly || isContactable(p)
@@ -1002,18 +1085,18 @@ function App() {
   }
 
   return (
-    <div className={`min-h-screen bg-zinc-950 transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
+    <div className={`h-screen bg-zinc-950 flex flex-col overflow-hidden transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
       <TaskPanel />
       {draftModal && <DraftModal draft={draftModal} onClose={() => setDraftModal(null)} />}
       {/* Subtle grid background */}
-      <div className="fixed inset-0 opacity-[0.02]" style={{
+      <div className="fixed inset-0 opacity-[0.02] pointer-events-none" style={{
         backgroundImage: 'linear-gradient(rgba(255,255,255,0.1) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.1) 1px, transparent 1px)',
         backgroundSize: '50px 50px'
       }} />
 
-      <div className="relative max-w-7xl mx-auto px-8 py-12">
+      <div className="relative px-6 pt-6 flex flex-col flex-1 min-h-0">
         {/* Header */}
-        <header className="mb-12">
+        <header className="mb-6">
           <div className="flex items-center justify-between mb-2">
             <div className="flex items-baseline gap-4">
               <h1 className="font-mono text-2xl font-bold tracking-tight text-white">TENEX</h1>
@@ -1039,17 +1122,8 @@ function App() {
           <div className="h-px bg-gradient-to-r from-zinc-700 via-zinc-800 to-transparent" />
         </header>
 
-        {/* Stats */}
-        <div className="grid grid-cols-5 gap-3 mb-12">
-          <StatCard value={data.stats.prospects} label="Total" />
-          <StatCard value={contactableCount} label="Contactable" accent="bg-cyan-500" />
-          <StatCard value={data.stats.high_signal} label="High Signal" accent="bg-emerald-500" />
-          <StatCard value={data.stats.sources} label="Sources" accent="bg-amber-500" />
-          <StatCard value={data.stats.rejected} label="Rejected" />
-        </div>
-
         {/* Tabs */}
-        <div className="flex gap-1 mb-8 border-b border-zinc-900">
+        <div className="flex gap-1 mb-4 border-b border-zinc-900">
           {(['drafts', 'prospects', 'sources'] as const).map(t => (
             <button
               key={t}
@@ -1081,17 +1155,17 @@ function App() {
           </div>
         )}
 
-        {/* Prospects Tab */}
+        {/* Prospects Tab - Split View */}
         {tab === 'prospects' && (
-          <div>
-            {/* Filters */}
-            <div className="mb-4 flex items-center gap-6">
-              <div className="flex items-center gap-3">
-                <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-600">Filter by status:</span>
+          <div className="flex border border-zinc-900 flex-1 min-h-0">
+            {/* Left: Prospect List */}
+            <div className="w-80 border-r border-zinc-900 flex flex-col flex-shrink-0">
+              {/* Filters */}
+              <div className="p-3 border-b border-zinc-900 space-y-2 flex-shrink-0">
                 <select
                   value={outreachFilter}
                   onChange={e => setOutreachFilter(e.target.value as OutreachFilter)}
-                  className="font-mono text-sm bg-zinc-900 border border-zinc-800 text-zinc-300 px-3 py-2 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
+                  className="w-full font-mono text-xs bg-zinc-900 border border-zinc-800 text-zinc-300 px-2 py-1.5 focus:outline-none focus:border-zinc-600 hover:border-zinc-700 transition-colors cursor-pointer"
                 >
                   {(Object.keys(outreachFilterLabels) as OutreachFilter[]).map(key => (
                     <option key={key} value={key}>
@@ -1099,49 +1173,48 @@ function App() {
                     </option>
                   ))}
                 </select>
+                <label className="flex items-center gap-2 cursor-pointer group">
+                  <input
+                    type="checkbox"
+                    checked={contactableOnly}
+                    onChange={e => setContactableOnly(e.target.checked)}
+                    className="w-3 h-3 bg-zinc-900 border border-zinc-700 rounded-none text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
+                  />
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors">
+                    Contactable only
+                  </span>
+                </label>
               </div>
-              <label className="flex items-center gap-2 cursor-pointer group">
-                <input
-                  type="checkbox"
-                  checked={contactableOnly}
-                  onChange={e => setContactableOnly(e.target.checked)}
-                  className="w-4 h-4 bg-zinc-900 border border-zinc-700 rounded-none text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500"
-                />
-                <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-500 group-hover:text-zinc-400 transition-colors">
-                  Contactable only
-                </span>
-              </label>
+              {/* List */}
+              <div className="flex-1 overflow-y-auto">
+                {filteredProspects.map((p) => (
+                  <ProspectListItem
+                    key={p.id}
+                    p={p}
+                    isSelected={selectedProspectId === p.id}
+                    onClick={() => setSelectedProspectId(p.id)}
+                    hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
+                  />
+                ))}
+              </div>
             </div>
-            <div className="border border-zinc-900">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-zinc-800 bg-zinc-900/50">
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Handle</th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Name</th>
-                    <th className="text-center py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Contact</th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Email</th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Signal</th>
-                                        <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600">Outreach</th>
-                    <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 max-w-[140px]">Source</th>
-                    <th className="text-right py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-[180px]">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredProspects.map((p) => (
-                    <ProspectRow
-                      key={p.id}
-                      p={p}
-                      isExpanded={expandedProspectId === p.id}
-                      onToggle={() => setExpandedProspectId(expandedProspectId === p.id ? null : p.id)}
-                      hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
-                      onDraftClick={() => {
-                        const draft = data.drafts.find(d => d.github_username === p.github_username)
-                        if (draft) setDraftModal(draft)
-                      }}
-                    />
-                  ))}
-                </tbody>
-              </table>
+
+            {/* Right: Profile Detail */}
+            <div className="flex-1 bg-zinc-950/50 overflow-y-auto">
+              {selectedProspect ? (
+                <ProspectProfile
+                  p={selectedProspect}
+                  drafts={data.drafts}
+                  onDraftClick={(draft) => setDraftModal(draft)}
+                />
+              ) : (
+                <div className="h-full flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="font-mono text-zinc-700 text-sm">SELECT_PROSPECT</div>
+                    <div className="font-mono text-zinc-800 text-xs mt-1">Click a prospect to view details</div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         )}
@@ -1174,15 +1247,6 @@ function App() {
           </div>
         )}
 
-        {/* Footer */}
-        <footer className="mt-12 pt-6 border-t border-zinc-900 flex items-center justify-between">
-          <div className="font-mono text-[10px] text-zinc-700 uppercase tracking-wider">
-            Live data from SQLite
-          </div>
-          <div className="font-mono text-[10px] text-zinc-800">
-            TENEX INTELLIGENCE v0.1
-          </div>
-        </footer>
       </div>
     </div>
   )
