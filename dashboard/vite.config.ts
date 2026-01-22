@@ -178,7 +178,7 @@ function actionLoggerPlugin() {
                 draft: ['Bash', 'Read', 'TodoWrite'],
                 reject: ['Bash'],
                 rewrite: ['Bash', 'Read'],
-                research: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read', 'Task'],
+                research: ['Bash', 'WebFetch', 'WebSearch', 'TodoWrite', 'Read', 'Task', 'Skill'],
               }
 
               if (action.action === 'enrich') {
@@ -287,9 +287,9 @@ INSTRUCTIONS:
    sqlite3 -header -column prospects.db "SELECT source_type, source_name, checked_at FROM sources_checked ORDER BY checked_at DESC LIMIT 10"
 
 2. Pick a source that needs refreshing (or a new one). Good options:
-   - Twitter/Nitter: search "built with claude", "vibe coding", "shipped in a weekend"
-   - Hacker News: Show HN posts about AI tools, agents
-   - GitHub: contributors to AI repos (vercel/ai, anthropics/claude-code, etc.)
+   - Twitter/Nitter: Use /agent-browser skill to search nitter.poast.org for "built with claude", "vibe coding", "shipped in a weekend"
+   - Hacker News: WebFetch the Algolia API for Show HN posts about AI tools, agents
+   - GitHub: Use gh CLI to find contributors to AI repos (vercel/ai, anthropics/claude-code, etc.)
 
 3. For each potential prospect:
    - Check if already in DB: sqlite3 prospects.db "SELECT 1 FROM prospects WHERE github_username='{user}' UNION SELECT 1 FROM rejected WHERE github_username='{user}'"
