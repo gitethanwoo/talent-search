@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import type { AgentTask } from '../../types'
 import { StreamEventView } from './StreamEventView'
 
@@ -12,6 +12,12 @@ export function TaskPanel() {
   const [connected, setConnected] = useState(false)
   const [view, setView] = useState<TaskView>('active')
   const [userMinimized, setUserMinimized] = useState(false)
+
+  // Refs to track state for auto-expand logic in event handlers
+  const userMinimizedRef = useRef(userMinimized)
+  useEffect(() => {
+    userMinimizedRef.current = userMinimized
+  }, [userMinimized])
 
   useEffect(() => {
     const eventSource = new EventSource('/api/tasks/stream')
@@ -32,6 +38,11 @@ export function TaskPanel() {
           return [updatedTask, ...prev]
         }
       })
+
+      // Auto-expand when a running task arrives (unless user manually minimized)
+      if (updatedTask.status === 'running' && !userMinimizedRef.current) {
+        setMode(prev => prev === 'minimized' ? 'normal' : prev)
+      }
     }
 
     eventSource.onerror = () => {
@@ -46,21 +57,10 @@ export function TaskPanel() {
   const activeTasks = tasks.filter(t => t.status === 'running')
   const historyTasks = tasks.filter(t => t.status !== 'running')
   const displayedTasks = view === 'active' ? activeTasks : historyTasks
-  const selectedTask = selectedTaskId ? tasks.find(t => t.id === selectedTaskId) : null
 
-  useEffect(() => {
-    if (!selectedTaskId && runningCount > 0) {
-      const firstRunning = tasks.find(t => t.status === 'running')
-      if (firstRunning) setSelectedTaskId(firstRunning.id)
-    }
-  }, [tasks, selectedTaskId, runningCount])
-
-  // Auto-expand when tasks start running (unless user manually minimized)
-  useEffect(() => {
-    if (runningCount > 0 && mode === 'minimized' && !userMinimized) {
-      setMode('normal')
-    }
-  }, [runningCount, mode, userMinimized])
+  // Compute effective selected task - auto-select first running if none selected
+  const effectiveSelectedTaskId = selectedTaskId || (activeTasks.length > 0 ? activeTasks[0].id : null)
+  const selectedTask = effectiveSelectedTaskId ? tasks.find(t => t.id === effectiveSelectedTaskId) : null
 
   // Minimized mode
   if (mode === 'minimized') {
@@ -150,7 +150,7 @@ export function TaskPanel() {
                     className={`px-4 py-3 border-b border-zinc-900 transition-colors ${
                       isClickable ? 'cursor-pointer' : ''
                     } ${
-                      selectedTaskId === task.id ? 'bg-zinc-800/50' : isClickable ? 'hover:bg-zinc-900/50' : ''
+                      effectiveSelectedTaskId === task.id ? 'bg-zinc-800/50' : isClickable ? 'hover:bg-zinc-900/50' : ''
                     }`}
                     onClick={() => isClickable && setSelectedTaskId(task.id)}
                   >

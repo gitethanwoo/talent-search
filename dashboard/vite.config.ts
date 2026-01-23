@@ -30,7 +30,8 @@ function getDbData() {
     prospects: query(`
       SELECT id, github_username, name, email, twitter, location, company,
              signal, ships_fast, ai_native, source, outreach_status,
-             notes, comp_fit, outreach_context, bio, fit, enriched_at
+             notes, comp_fit, outreach_context, bio, fit, enriched_at,
+             blog, personal_site
       FROM prospects
       ORDER BY CASE fit WHEN 'unlikely' THEN 2 ELSE 1 END,
                CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END,
@@ -214,46 +215,6 @@ function broadcastChatUpdate(session: ChatSession) {
   chatClients.forEach(client => {
     client.write(`data: ${data}\n\n`)
   })
-}
-
-function getProspectContext(): string {
-  const db = new Database(DB_PATH, { readonly: true })
-
-  const stats = {
-    total: (db.prepare("SELECT COUNT(*) as c FROM prospects").get() as {c: number}).c,
-    enriched: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE enriched_at IS NOT NULL").get() as {c: number}).c,
-    contactable: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE email IS NOT NULL OR twitter IS NOT NULL").get() as {c: number}).c,
-    highSignal: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE signal='high'").get() as {c: number}).c,
-  }
-
-  const prospects = db.prepare(`
-    SELECT github_username, name, email, twitter, company, signal, fit, enriched_at, outreach_status, bio, outreach_context
-    FROM prospects
-    ORDER BY CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
-    LIMIT 50
-  `).all() as Array<Record<string, unknown>>
-
-  const drafts = db.prepare(`
-    SELECT p.github_username, m.subject, m.status
-    FROM outreach_messages m
-    JOIN prospects p ON p.id = m.prospect_id
-    ORDER BY m.created_at DESC
-    LIMIT 20
-  `).all() as Array<Record<string, unknown>>
-
-  db.close()
-
-  return `## Prospect Pipeline Overview
-- Total prospects: ${stats.total}
-- Enriched: ${stats.enriched}
-- Contactable (has email or twitter): ${stats.contactable}
-- High signal: ${stats.highSignal}
-
-## Top Prospects (by signal strength)
-${prospects.map(p => `- @${p.github_username}${p.name ? ` (${p.name})` : ''}: signal=${p.signal}, fit=${p.fit || 'unknown'}, ${p.enriched_at ? 'enriched' : 'not enriched'}, status=${p.outreach_status || 'not contacted'}${p.company ? `, company: ${p.company}` : ''}${p.bio ? `\n  Bio: ${p.bio}` : ''}${p.outreach_context ? `\n  Context: ${p.outreach_context}` : ''}`).join('\n')}
-
-## Recent Drafts
-${drafts.map(d => `- @${d.github_username}: "${d.subject}" (${d.status})`).join('\n') || 'No drafts yet'}`
 }
 
 function broadcastTaskUpdate(task: Task) {
@@ -559,7 +520,7 @@ function actionLoggerPlugin() {
                 res.writeHead(404, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: false, error: 'Job not found or not running' }))
               }
-            } catch (e) {
+            } catch {
               res.writeHead(400, { 'Content-Type': 'application/json' })
               res.end(JSON.stringify({ ok: false, error: 'Invalid request' }))
             }
@@ -739,6 +700,8 @@ function actionLoggerPlugin() {
               // Spawn Claude with system context - let it discover everything else
               const systemPrompt = `You're embedded in the Tenex dashboard - a prospect/recruiting pipeline for finding AI engineers. The SQLite database is at ../prospects.db. You can query it, read files, edit the dashboard code (it's a React/Vite app in the current directory), or do anything else helpful. Keep responses concise.
 
+The user is chatting with you from the embedded chat panel inside the dashboard UI. You cannot see their screen, but you can take screenshots of URLs using agent-browser if needed. If they want to show you something visual, ask them to save a screenshot and provide the file path.
+
 When making code changes: use atomic commits. Make a small change, test it, commit. If something breaks, revert and try again. Don't make sweeping changes in one go.`
 
               const child = spawn('claude', [
@@ -851,7 +814,7 @@ When making code changes: use atomic commits. Make a small change, test it, comm
             try {
               const action = JSON.parse(body)
               let prompt = ''
-              let taskAction = action.action
+              const taskAction = action.action
 
               // Tool restrictions per action type
               const toolsByAction: Record<string, string[]> = {
@@ -1060,7 +1023,6 @@ INSTRUCTIONS:
                   stdio: ['ignore', 'pipe', 'pipe']
                 })
 
-                let outputBuffer = ''
                 const events: StreamEvent[] = []
 
                 function parseStreamJson(line: string): StreamEvent | null {
@@ -1095,7 +1057,6 @@ INSTRUCTIONS:
 
                 child.stdout?.on('data', (data: Buffer) => {
                   const text = data.toString()
-                  outputBuffer += text
                   fs.appendFileSync(outputFile, text)
 
                   // Parse each line of JSON into structured events
@@ -1119,7 +1080,6 @@ INSTRUCTIONS:
 
                 child.stderr?.on('data', (data: Buffer) => {
                   const text = data.toString()
-                  outputBuffer += `[err] ${text}`
                   fs.appendFileSync(outputFile, `[stderr] ${text}`)
                   events.push({ type: 'text', content: `[stderr] ${text}` })
                   task.events = events

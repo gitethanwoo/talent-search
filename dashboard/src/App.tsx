@@ -41,17 +41,7 @@ interface Data {
 }
 
 function App() {
-  // Simple routing for dev/test pages
-  const pathname = window.location.pathname
-
-  if (pathname === '/components' || window.location.search.includes('view=components')) {
-    return <TaskViewerPage />
-  }
-
-  if (pathname === '/glow') {
-    return <GlowTest />
-  }
-
+  // All hooks must be called unconditionally at the top
   const [data, setData] = useState<Data | null>(null)
   const [tab, setTab] = useState<'drafts' | 'prospects' | 'sources'>('prospects')
   const [draftModal, setDraftModal] = useState<Draft | null>(null)
@@ -160,9 +150,9 @@ function App() {
     const isContacted = ['contacted', 'replied', 'interested', 'closed'].includes(p.outreach_status || '')
 
     if (isContacted) return 'contacted'
+    if (!p.enriched_at) return 'needs_enrichment'  // Check enrichment first
     if (hasDraft) return 'ready_to_send'
-    if (p.enriched_at) return 'needs_draft'
-    return 'needs_enrichment'
+    return 'needs_draft'
   }
 
   // Compute pipeline stage counts
@@ -237,6 +227,15 @@ function App() {
     } else {
       setCheckedIds(new Set(filteredProspects.map(p => p.id)))
     }
+  }
+
+  // Simple routing for dev/test pages
+  const pathname = window.location.pathname
+  if (pathname === '/components' || window.location.search.includes('view=components')) {
+    return <TaskViewerPage />
+  }
+  if (pathname === '/glow') {
+    return <GlowTest />
   }
 
   if (!data) {
