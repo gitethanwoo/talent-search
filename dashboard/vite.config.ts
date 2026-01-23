@@ -180,6 +180,82 @@ loadTasksFromDb()
 // SSE clients for streaming updates
 const sseClients: Set<ServerResponse> = new Set()
 
+// Chat session types and storage
+interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  events?: ChatStreamEvent[]
+}
+
+interface ChatStreamEvent {
+  type: 'text' | 'tool_call' | 'tool_result'
+  tool?: string
+  content: string
+}
+
+interface ChatSession {
+  id: string
+  messages: ChatMessage[]
+  status: 'idle' | 'streaming' | 'error'
+  currentResponse: string
+  currentEvents: ChatStreamEvent[]
+  createdAt: string
+  updatedAt: string
+}
+
+const chatSessions: Map<string, ChatSession> = new Map()
+let chatSessionCounter = 0
+
+// SSE clients for chat streaming
+const chatClients: Set<ServerResponse> = new Set()
+
+function broadcastChatUpdate(session: ChatSession) {
+  const data = JSON.stringify(session)
+  chatClients.forEach(client => {
+    client.write(`data: ${data}\n\n`)
+  })
+}
+
+function getProspectContext(): string {
+  const db = new Database(DB_PATH, { readonly: true })
+
+  const stats = {
+    total: (db.prepare("SELECT COUNT(*) as c FROM prospects").get() as {c: number}).c,
+    enriched: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE enriched_at IS NOT NULL").get() as {c: number}).c,
+    contactable: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE email IS NOT NULL OR twitter IS NOT NULL").get() as {c: number}).c,
+    highSignal: (db.prepare("SELECT COUNT(*) as c FROM prospects WHERE signal='high'").get() as {c: number}).c,
+  }
+
+  const prospects = db.prepare(`
+    SELECT github_username, name, email, twitter, company, signal, fit, enriched_at, outreach_status, bio, outreach_context
+    FROM prospects
+    ORDER BY CASE signal WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END
+    LIMIT 50
+  `).all() as Array<Record<string, unknown>>
+
+  const drafts = db.prepare(`
+    SELECT p.github_username, m.subject, m.status
+    FROM outreach_messages m
+    JOIN prospects p ON p.id = m.prospect_id
+    ORDER BY m.created_at DESC
+    LIMIT 20
+  `).all() as Array<Record<string, unknown>>
+
+  db.close()
+
+  return `## Prospect Pipeline Overview
+- Total prospects: ${stats.total}
+- Enriched: ${stats.enriched}
+- Contactable (has email or twitter): ${stats.contactable}
+- High signal: ${stats.highSignal}
+
+## Top Prospects (by signal strength)
+${prospects.map(p => `- @${p.github_username}${p.name ? ` (${p.name})` : ''}: signal=${p.signal}, fit=${p.fit || 'unknown'}, ${p.enriched_at ? 'enriched' : 'not enriched'}, status=${p.outreach_status || 'not contacted'}${p.company ? `, company: ${p.company}` : ''}${p.bio ? `\n  Bio: ${p.bio}` : ''}${p.outreach_context ? `\n  Context: ${p.outreach_context}` : ''}`).join('\n')}
+
+## Recent Drafts
+${drafts.map(d => `- @${d.github_username}: "${d.subject}" (${d.status})`).join('\n') || 'No drafts yet'}`
+}
+
 function broadcastTaskUpdate(task: Task) {
   const data = JSON.stringify(task)
   sseClients.forEach(client => {
@@ -187,10 +263,9 @@ function broadcastTaskUpdate(task: Task) {
   })
 }
 
-// Process a bulk job in background
+// Process a bulk job in background with sliding window concurrency
 async function processBulkJob(job: BulkJob) {
-  const BATCH_SIZE = 10
-  const BATCH_DELAY_MS = 1000
+  const MAX_CONCURRENT = 10
 
   job.status = 'running'
   job.updatedAt = new Date().toISOString()
@@ -209,115 +284,150 @@ async function processBulkJob(job: BulkJob) {
   // Create a map for quick lookup
   const prospectMap = new Map(prospects.map(p => [p.id, p]))
 
-  // Process in batches
-  for (let i = 0; i < job.prospectIds.length; i += BATCH_SIZE) {
-    // Check if cancelled (re-fetch from Map to get current status)
+  // Process a single prospect and update progress immediately
+  async function processOne(prospectId: number): Promise<void> {
+    const prospect = prospectMap.get(prospectId)
+    if (!prospect) {
+      job.failed++
+      job.failedIds.push({ id: prospectId, error: 'Prospect not found' })
+      return
+    }
+
+    try {
+      // Mock test action - just sleep and optionally fail randomly
+      if (job.action === 'test') {
+        await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300))
+        if (Math.random() < 0.1) {
+          throw new Error('Simulated random failure')
+        }
+        job.completed++
+        job.completedIds.push(prospectId)
+        return
+      }
+
+      // Build action payload for real actions
+      const actionPayload = job.action === 'enrich'
+        ? { action: 'enrich', username: prospect.github_username, name: prospect.name }
+        : { action: 'draft', username: prospect.github_username, name: prospect.name, email: prospect.email, twitter: prospect.twitter }
+
+      // Send to action endpoint (this triggers the Claude subprocess)
+      const response = await fetch('http://localhost:5173/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(actionPayload)
+      })
+
+      if (response.ok) {
+        const { taskId } = await response.json() as { taskId: string }
+
+        // Poll for task completion
+        let taskDone = false
+        let taskError: string | null = null
+        while (!taskDone) {
+          await new Promise(resolve => setTimeout(resolve, 2000))
+
+          // Check if bulk job was cancelled
+          const currentJob = bulkJobs.get(job.id)
+          if (currentJob?.status === 'cancelled') {
+            taskError = 'Bulk job cancelled'
+            break
+          }
+
+          // Check task status from our in-memory store
+          const task = tasks.get(taskId)
+          if (!task) {
+            taskError = 'Task not found'
+            break
+          }
+          if (task.status === 'done') {
+            taskDone = true
+          } else if (task.status === 'error') {
+            taskError = task.error || 'Task failed'
+            break
+          }
+        }
+
+        if (taskDone) {
+          job.completed++
+          job.completedIds.push(prospectId)
+        } else {
+          job.failed++
+          job.failedIds.push({ id: prospectId, error: taskError || 'Unknown error' })
+        }
+      } else {
+        job.failed++
+        job.failedIds.push({ id: prospectId, error: `HTTP ${response.status}` })
+      }
+    } catch (e) {
+      job.failed++
+      job.failedIds.push({ id: prospectId, error: String(e) })
+    }
+  }
+
+  // Sliding window concurrency: always keep MAX_CONCURRENT running until done
+  let nextIndex = 0
+  const activePromises = new Map<number, Promise<void>>()
+
+  // Helper to broadcast updates (debounced to avoid overwhelming clients)
+  let updatePending = false
+  function scheduleUpdate() {
+    if (updatePending) return
+    updatePending = true
+    setTimeout(() => {
+      updatePending = false
+      job.updatedAt = new Date().toISOString()
+      saveBulkJobToDb(job)
+      broadcastBulkJobUpdate(job)
+      console.log(`\x1b[36m[BULK]\x1b[0m Job ${job.id}: ${job.completed}/${job.total} completed, ${job.failed} failed`)
+    }, 100) // Debounce 100ms
+  }
+
+  // Start initial batch of concurrent operations
+  while (nextIndex < job.prospectIds.length && activePromises.size < MAX_CONCURRENT) {
+    const prospectId = job.prospectIds[nextIndex]
+    const idx = nextIndex
+    nextIndex++
+
+    const promise = processOne(prospectId).then(() => {
+      activePromises.delete(idx)
+      scheduleUpdate()
+    })
+    activePromises.set(idx, promise)
+  }
+
+  // Keep the pool full until all items are processed
+  while (activePromises.size > 0) {
+    // Check if cancelled
     const currentJob = bulkJobs.get(job.id)
     if (currentJob?.status === 'cancelled') {
-      console.log(`\x1b[33m[BULK]\x1b[0m Job ${job.id} was cancelled, stopping at ${job.completed}/${job.total}`)
+      console.log(`\x1b[33m[BULK]\x1b[0m Job ${job.id} was cancelled, waiting for ${activePromises.size} active tasks to finish`)
+      // Wait for active tasks but don't start new ones
+      await Promise.all(activePromises.values())
       job.status = 'cancelled'
       break
     }
 
-    const batchIds = job.prospectIds.slice(i, i + BATCH_SIZE)
-    const batchPromises = batchIds.map(async (prospectId) => {
-      const prospect = prospectMap.get(prospectId)
-      if (!prospect) {
-        job.failed++
-        job.failedIds.push({ id: prospectId, error: 'Prospect not found' })
-        return
-      }
+    // Wait for at least one to complete
+    await Promise.race(activePromises.values())
 
-      try {
-        // Mock test action - just sleep and optionally fail randomly
-        if (job.action === 'test') {
-          await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300)) // 200-500ms per item
-          // 10% random failure rate for testing error handling
-          if (Math.random() < 0.1) {
-            throw new Error('Simulated random failure')
-          }
-          job.completed++
-          job.completedIds.push(prospectId)
-          return
-        }
+    // Fill up the pool with new work
+    while (nextIndex < job.prospectIds.length && activePromises.size < MAX_CONCURRENT) {
+      const currentJob = bulkJobs.get(job.id)
+      if (currentJob?.status === 'cancelled') break
 
-        // Build action payload for real actions
-        const actionPayload = job.action === 'enrich'
-          ? { action: 'enrich', username: prospect.github_username, name: prospect.name }
-          : { action: 'draft', username: prospect.github_username, name: prospect.name, email: prospect.email, twitter: prospect.twitter }
+      const prospectId = job.prospectIds[nextIndex]
+      const idx = nextIndex
+      nextIndex++
 
-        // Send to action endpoint (this triggers the Claude subprocess)
-        const response = await fetch('http://localhost:5173/api/action', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(actionPayload)
-        })
-
-        if (response.ok) {
-          const { taskId } = await response.json() as { taskId: string }
-
-          // Poll for task completion
-          let taskDone = false
-          let taskError: string | null = null
-          while (!taskDone) {
-            await new Promise(resolve => setTimeout(resolve, 2000)) // Poll every 2 seconds
-
-            // Check if bulk job was cancelled
-            const currentJob = bulkJobs.get(job.id)
-            if (currentJob?.status === 'cancelled') {
-              taskError = 'Bulk job cancelled'
-              break
-            }
-
-            // Check task status from our in-memory store
-            const task = tasks.get(taskId)
-            if (!task) {
-              taskError = 'Task not found'
-              break
-            }
-            if (task.status === 'done') {
-              taskDone = true
-            } else if (task.status === 'error') {
-              taskError = task.error || 'Task failed'
-              break
-            }
-            // If still 'running', continue polling
-          }
-
-          if (taskDone) {
-            job.completed++
-            job.completedIds.push(prospectId)
-          } else {
-            job.failed++
-            job.failedIds.push({ id: prospectId, error: taskError || 'Unknown error' })
-          }
-        } else {
-          job.failed++
-          job.failedIds.push({ id: prospectId, error: `HTTP ${response.status}` })
-        }
-      } catch (e) {
-        job.failed++
-        job.failedIds.push({ id: prospectId, error: String(e) })
-      }
-    })
-
-    await Promise.all(batchPromises)
-
-    // Update job status
-    job.updatedAt = new Date().toISOString()
-    saveBulkJobToDb(job)
-    broadcastBulkJobUpdate(job)
-
-    console.log(`\x1b[36m[BULK]\x1b[0m Job ${job.id}: ${job.completed}/${job.total} completed, ${job.failed} failed`)
-
-    // Delay between batches (unless this is the last batch or cancelled)
-    const jobAfterBatch = bulkJobs.get(job.id)
-    if (i + BATCH_SIZE < job.prospectIds.length && jobAfterBatch?.status !== 'cancelled') {
-      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+      const promise = processOne(prospectId).then(() => {
+        activePromises.delete(idx)
+        scheduleUpdate()
+      })
+      activePromises.set(idx, promise)
     }
   }
 
-  // Final status (check if cancelled via Map)
+  // Final status
   const finalJob = bulkJobs.get(job.id)
   if (finalJob?.status !== 'cancelled') {
     job.status = job.failed === job.total ? 'failed' : 'completed'
@@ -516,6 +626,208 @@ function actionLoggerPlugin() {
           )
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify(jobList))
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Chat SSE stream
+      server.middlewares.use('/api/chat/stream', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+          })
+
+          // Send current session if exists
+          const sessions = Array.from(chatSessions.values())
+          if (sessions.length > 0) {
+            const latest = sessions[sessions.length - 1]
+            res.write(`event: init\ndata: ${JSON.stringify(latest)}\n\n`)
+          } else {
+            res.write(`event: init\ndata: null\n\n`)
+          }
+
+          chatClients.add(res)
+          console.log('\x1b[35m[CHAT-SSE]\x1b[0m Client connected, total:', chatClients.size)
+
+          req.on('close', () => {
+            chatClients.delete(res)
+            console.log('\x1b[35m[CHAT-SSE]\x1b[0m Client disconnected, total:', chatClients.size)
+          })
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Get or create chat session
+      server.middlewares.use('/api/chat/session', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          const sessions = Array.from(chatSessions.values())
+          const latest = sessions.length > 0 ? sessions[sessions.length - 1] : null
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(latest))
+        } else if (req.method === 'DELETE') {
+          // Clear chat history
+          chatSessions.clear()
+          chatSessionCounter = 0
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify({ ok: true }))
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Send chat message
+      server.middlewares.use('/api/chat', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (chunk: Buffer) => body += chunk.toString())
+          req.on('end', () => {
+            try {
+              const { message } = JSON.parse(body) as { message: string }
+
+              if (!message || !message.trim()) {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: 'Empty message' }))
+                return
+              }
+
+              // Get or create session
+              let session: ChatSession
+              const sessions = Array.from(chatSessions.values())
+              if (sessions.length > 0) {
+                session = sessions[sessions.length - 1]
+              } else {
+                const sessionId = `chat-${++chatSessionCounter}`
+                session = {
+                  id: sessionId,
+                  messages: [],
+                  status: 'idle',
+                  currentResponse: '',
+                  currentEvents: [],
+                  createdAt: new Date().toISOString(),
+                  updatedAt: new Date().toISOString()
+                }
+                chatSessions.set(sessionId, session)
+              }
+
+              // Add user message
+              session.messages.push({ role: 'user', content: message })
+              session.status = 'streaming'
+              session.currentResponse = ''
+              session.currentEvents = []
+              session.updatedAt = new Date().toISOString()
+              broadcastChatUpdate(session)
+
+              // Build conversation for context
+              const conversationHistory = session.messages.slice(0, -1).map(m =>
+                `${m.role === 'user' ? 'Human' : 'Assistant'}: ${m.content}`
+              ).join('\n\n')
+
+              const userPrompt = conversationHistory
+                ? `${conversationHistory}\n\nHuman: ${message}`
+                : message
+
+              console.log('\x1b[36m[CHAT]\x1b[0m Processing message:', message.slice(0, 50) + '...')
+
+              // Spawn Claude with system context - let it discover everything else
+              const systemPrompt = `You're embedded in the Tenex dashboard - a prospect/recruiting pipeline for finding AI engineers. The SQLite database is at ../prospects.db. You can query it, read files, edit the dashboard code (it's a React/Vite app in the current directory), or do anything else helpful. Keep responses concise.`
+
+              const child = spawn('claude', [
+                '-p', userPrompt,
+                '--append-system-prompt', systemPrompt,
+                '--allowedTools', 'Bash,Read,Glob,Grep,WebFetch,WebSearch,Skill,Task,Write,Edit',
+                '--output-format', 'stream-json',
+                '--verbose',
+              ], {
+                cwd: path.resolve(__dirname, '..'),
+                stdio: ['ignore', 'pipe', 'pipe']
+              })
+
+              let responseText = ''
+              const events: ChatStreamEvent[] = []
+
+              child.stdout?.on('data', (data: Buffer) => {
+                const text = data.toString()
+                const lines = text.split('\n').filter(l => l.trim())
+
+                for (const line of lines) {
+                  try {
+                    const event = JSON.parse(line)
+
+                    // Handle assistant messages
+                    if (event.type === 'assistant' && event.message?.content) {
+                      for (const block of event.message.content) {
+                        if (block.type === 'text' && block.text) {
+                          responseText += block.text
+                          events.push({ type: 'text', content: block.text })
+                        }
+                        if (block.type === 'tool_use') {
+                          const input = block.input?.command || block.input?.url || block.input?.pattern || block.input?.file_path || block.input?.query || block.input?.skill || JSON.stringify(block.input || {}).slice(0, 200)
+                          events.push({ type: 'tool_call', tool: block.name, content: input })
+                          console.log('\x1b[36m[CHAT]\x1b[0m Tool call:', block.name)
+                        }
+                      }
+                    }
+
+                    // Handle tool results
+                    if (event.type === 'user' && event.tool_use_result) {
+                      const result = event.tool_use_result
+                      const output = result.stdout || result.content || ''
+                      if (output && output.trim()) {
+                        events.push({ type: 'tool_result', content: output.slice(0, 500) })
+                      }
+                    }
+
+                    session.currentResponse = responseText
+                    session.currentEvents = events
+                    session.updatedAt = new Date().toISOString()
+                    broadcastChatUpdate(session)
+                  } catch {
+                    // Ignore parse errors
+                  }
+                }
+              })
+
+              child.stderr?.on('data', (data: Buffer) => {
+                console.error('\x1b[31m[CHAT-ERR]\x1b[0m', data.toString())
+              })
+
+              child.on('close', (code) => {
+                if (code === 0 && responseText) {
+                  // Save both content and tool events with the message
+                  session.messages.push({
+                    role: 'assistant',
+                    content: responseText,
+                    events: events.filter(e => e.type !== 'text') // Keep tool_call and tool_result
+                  })
+                  session.status = 'idle'
+                  session.currentResponse = ''
+                  session.currentEvents = []
+                  console.log('\x1b[32m[CHAT]\x1b[0m Response complete')
+                } else {
+                  session.status = 'error'
+                  console.error('\x1b[31m[CHAT]\x1b[0m Error, exit code:', code)
+                }
+                session.updatedAt = new Date().toISOString()
+                broadcastChatUpdate(session)
+              })
+
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, sessionId: session.id }))
+
+            } catch (e) {
+              console.error('[CHAT] Error:', e)
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Failed to process message' }))
+            }
+          })
         } else {
           res.writeHead(405)
           res.end()

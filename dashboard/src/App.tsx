@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import TaskViewerPage from './components/TaskViewer'
 import { GlowTest } from './components/GlowTest'
 import { TaskPanel } from './components/TaskPanel'
+import { ChatPanel } from './components/ChatPanel'
 import { DraftCard, DraftModal } from './components/Drafts'
 import { ProspectListItem, ProspectProfile } from './components/Prospects'
 import type { Prospect, Draft, AgentTask } from './types'
@@ -70,6 +71,7 @@ function App() {
     failed: number
   } | null>(null)
   const [activeTasks, setActiveTasks] = useState<AgentTask[]>([])
+  const [chatOpen, setChatOpen] = useState(false)
 
   const fetchData = () => {
     fetch('/api/data')
@@ -248,6 +250,10 @@ function App() {
   return (
     <div className={`h-screen bg-zinc-950 flex flex-col overflow-hidden transition-opacity duration-500 ${loaded ? 'opacity-100' : 'opacity-0'}`}>
       <TaskPanel />
+      <ChatPanel isOpen={chatOpen} onToggle={() => setChatOpen(!chatOpen)} />
+
+      {/* Main content wrapper - shrinks when chat is open */}
+      <div className={`flex flex-col flex-1 min-h-0 transition-all duration-300 ${chatOpen ? 'mr-[420px]' : ''}`}>
       {draftModal && <DraftModal draft={draftModal} onClose={() => setDraftModal(null)} />}
 
       {/* Subtle grid background */}
@@ -264,22 +270,33 @@ function App() {
               <h1 className="font-mono text-2xl font-bold tracking-tight text-white">TENEX</h1>
               <span className="font-mono text-[10px] uppercase tracking-[0.3em] text-zinc-600">Prospect Intelligence</span>
             </div>
-            <button
-              onClick={() => {
-                fetch('/api/action', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'research' })
-                })
-              }}
-              className="font-mono text-xs uppercase tracking-wider px-4 py-2 bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30 hover:border-violet-400 transition-all flex items-center gap-2"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
-                <path d="M9 6a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 019 6z" />
-                <path fillRule="evenodd" d="M2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9zm7-5.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11z" clipRule="evenodd" />
-              </svg>
-              Find Candidates
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setChatOpen(true)}
+                className="font-mono text-xs uppercase tracking-wider px-4 py-2 bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500/30 hover:border-amber-400 transition-all flex items-center gap-2"
+              >
+                <svg viewBox="0 0 24 24" className="w-4 h-4" fill="currentColor">
+                  <path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/>
+                </svg>
+                Ask Claude
+              </button>
+              <button
+                onClick={() => {
+                  fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'research' })
+                  })
+                }}
+                className="font-mono text-xs uppercase tracking-wider px-4 py-2 bg-violet-500/20 text-violet-400 border border-violet-500/30 hover:bg-violet-500/30 hover:border-violet-400 transition-all flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M9 6a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 019 6z" />
+                  <path fillRule="evenodd" d="M2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9zm7-5.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11z" clipRule="evenodd" />
+                </svg>
+                Find Candidates
+              </button>
+            </div>
           </div>
           <div className="h-px bg-gradient-to-r from-zinc-700 via-zinc-800 to-transparent" />
         </header>
@@ -575,6 +592,7 @@ function App() {
             </div>
           </div>
         )}
+      </div>
       </div>
     </div>
   )

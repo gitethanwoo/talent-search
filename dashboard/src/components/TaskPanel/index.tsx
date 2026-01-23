@@ -7,10 +7,11 @@ type TaskView = 'active' | 'history'
 
 export function TaskPanel() {
   const [tasks, setTasks] = useState<AgentTask[]>([])
-  const [mode, setMode] = useState<PanelMode>('normal')
+  const [mode, setMode] = useState<PanelMode>('minimized')
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [view, setView] = useState<TaskView>('active')
+  const [userMinimized, setUserMinimized] = useState(false)
 
   useEffect(() => {
     const eventSource = new EventSource('/api/tasks/stream')
@@ -54,12 +55,19 @@ export function TaskPanel() {
     }
   }, [tasks, selectedTaskId, runningCount])
 
+  // Auto-expand when tasks start running (unless user manually minimized)
+  useEffect(() => {
+    if (runningCount > 0 && mode === 'minimized' && !userMinimized) {
+      setMode('normal')
+    }
+  }, [runningCount, mode, userMinimized])
+
   // Minimized mode
   if (mode === 'minimized') {
     return (
       <div
         className="fixed bottom-4 right-4 bg-zinc-950 border border-zinc-800 shadow-2xl z-50 cursor-pointer hover:bg-zinc-900/50 transition-colors"
-        onClick={() => setMode('normal')}
+        onClick={() => { setMode('normal'); setUserMinimized(false) }}
       >
         <div className="flex items-center gap-3 px-4 py-2">
           <span className="font-mono text-xs uppercase tracking-wider text-zinc-400">Tasks</span>
@@ -113,7 +121,7 @@ export function TaskPanel() {
               </svg>
             </button>
             <button
-              onClick={() => setMode('minimized')}
+              onClick={() => { setMode('minimized'); setUserMinimized(true) }}
               className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
               title="Minimize"
             >
@@ -246,7 +254,7 @@ export function TaskPanel() {
             </svg>
           </button>
           <button
-            onClick={() => setMode('minimized')}
+            onClick={() => { setMode('minimized'); setUserMinimized(true) }}
             className="p-1.5 hover:bg-zinc-800 transition-colors text-zinc-500 hover:text-zinc-300"
             title="Minimize"
           >

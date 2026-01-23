@@ -87,3 +87,19 @@ export const outreachFilterLabels: Record<OutreachFilter, string> = {
 export function isContactable(p: Prospect): boolean {
   return !!(p.email || p.twitter)
 }
+
+// Chat types
+export interface ChatMessage {
+  role: 'user' | 'assistant'
+  content: string
+  events?: StreamEvent[]
+}
+
+export interface ChatSession {
+  id: string
+  messages: ChatMessage[]
+  status: 'idle' | 'streaming' | 'error'
+  currentResponse: string
+  createdAt: string
+  updatedAt: string
+}
