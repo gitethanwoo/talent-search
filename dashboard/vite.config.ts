@@ -737,7 +737,9 @@ function actionLoggerPlugin() {
               console.log('\x1b[36m[CHAT]\x1b[0m Processing message:', message.slice(0, 50) + '...')
 
               // Spawn Claude with system context - let it discover everything else
-              const systemPrompt = `You're embedded in the Tenex dashboard - a prospect/recruiting pipeline for finding AI engineers. The SQLite database is at ../prospects.db. You can query it, read files, edit the dashboard code (it's a React/Vite app in the current directory), or do anything else helpful. Keep responses concise.`
+              const systemPrompt = `You're embedded in the Tenex dashboard - a prospect/recruiting pipeline for finding AI engineers. The SQLite database is at ../prospects.db. You can query it, read files, edit the dashboard code (it's a React/Vite app in the current directory), or do anything else helpful. Keep responses concise.
+
+When making code changes: use atomic commits. Make a small change, test it, commit. If something breaks, revert and try again. Don't make sweeping changes in one go.`
 
               const child = spawn('claude', [
                 '-p', userPrompt,
