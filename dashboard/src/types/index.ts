@@ -45,6 +45,8 @@ export interface Prospect {
   outreach_context: string | null
   fit: string | null
   enriched_at: string | null
+  blog: string | null
+  personal_site: string | null
 }
 
 export interface Draft {

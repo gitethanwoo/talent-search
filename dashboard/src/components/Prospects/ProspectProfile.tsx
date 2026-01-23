@@ -165,6 +165,20 @@ export function ProspectProfile({ p, drafts, onDraftClick, activeTaskType }: Pro
             </div>
           </div>
 
+          {/* Personal Site */}
+          {(p.personal_site || p.blog) && (
+            <div>
+              <div className="font-mono text-[10px] uppercase tracking-wider text-zinc-600 mb-1">Website</div>
+              <a
+                href={p.personal_site || p.blog || ''}
+                target="_blank"
+                className="text-sm text-violet-400 hover:text-violet-300 transition-colors"
+              >
+                {p.personal_site || p.blog}
+              </a>
+            </div>
+          )}
+
           {/* Bio */}
           {p.bio && (
             <div>
