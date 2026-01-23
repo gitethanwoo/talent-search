@@ -73,12 +73,13 @@ export interface Data {
   sources: Source[]
 }
 
-export type OutreachFilter = 'all' | 'not_contacted' | 'in_progress' | 'replied' | 'interested' | 'closed'
+export type OutreachFilter = 'all' | 'not_contacted' | 'in_progress' | 'contacted' | 'replied' | 'interested' | 'closed'
 
 export const outreachFilterLabels: Record<OutreachFilter, string> = {
   all: 'All',
   not_contacted: 'Not Contacted',
   in_progress: 'In Progress',
+  contacted: 'Contacted',
   replied: 'Replied',
   interested: 'Interested',
   closed: 'Closed'

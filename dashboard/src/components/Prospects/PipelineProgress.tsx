@@ -10,7 +10,7 @@ export function PipelineProgress({ prospect, hasDraft }: PipelineProgressProps) 
     { key: 'found', label: 'Found', complete: true },
     { key: 'enriched', label: 'Enriched', complete: !!prospect.enriched_at },
     { key: 'drafted', label: 'Drafted', complete: hasDraft },
-    { key: 'contacted', label: 'Contacted', complete: ['in_progress', 'replied', 'interested', 'closed'].includes(prospect.outreach_status || '') },
+    { key: 'contacted', label: 'Contacted', complete: ['contacted', 'replied', 'interested', 'closed'].includes(prospect.outreach_status || '') },
     { key: 'replied', label: 'Replied', complete: ['replied', 'interested'].includes(prospect.outreach_status || '') },
   ]
 

@@ -157,7 +157,7 @@ function App() {
   // Helper to determine prospect's pipeline stage
   const getProspectStage = (p: Prospect, drafts: Draft[]): PipelineStage => {
     const hasDraft = drafts.some(d => d.github_username === p.github_username)
-    const isContacted = ['in_progress', 'replied', 'interested', 'closed'].includes(p.outreach_status || '')
+    const isContacted = ['contacted', 'replied', 'interested', 'closed'].includes(p.outreach_status || '')
 
     if (isContacted) return 'contacted'
     if (hasDraft) return 'ready_to_send'
