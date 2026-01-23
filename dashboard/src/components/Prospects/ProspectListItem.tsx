@@ -6,12 +6,12 @@ interface ProspectListItemProps {
   isSelected: boolean
   isChecked: boolean
   onClick: () => void
-  onCheck: (checked: boolean) => void
+  onCheckClick: (e: React.MouseEvent) => void
   hasDraft: boolean
   showCheckbox: boolean
 }
 
-export function ProspectListItem({ p, isSelected, isChecked, onClick, onCheck, hasDraft, showCheckbox }: ProspectListItemProps) {
+export function ProspectListItem({ p, isSelected, isChecked, onClick, onCheckClick, hasDraft, showCheckbox }: ProspectListItemProps) {
   const signalColors = {
     high: 'bg-emerald-500',
     medium: 'bg-amber-500',
@@ -21,23 +21,26 @@ export function ProspectListItem({ p, isSelected, isChecked, onClick, onCheck, h
 
   return (
     <div
-      onClick={onClick}
+      onClick={e => showCheckbox ? onCheckClick(e) : onClick()}
       className={`px-4 py-3 border-b border-zinc-900 cursor-pointer transition-all ${
         isSelected ? 'bg-zinc-800/70 border-l-2 border-l-cyan-500' : 'hover:bg-zinc-900/50 border-l-2 border-l-transparent'
-      } ${!contactable ? 'opacity-50' : ''}`}
+      } ${!contactable ? 'opacity-50' : ''} ${showCheckbox ? 'select-none' : ''}`}
     >
       <div className="flex items-center gap-3">
         {showCheckbox && (
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={e => {
-              e.stopPropagation()
-              onCheck(e.target.checked)
-            }}
-            onClick={e => e.stopPropagation()}
-            className="w-4 h-4 bg-zinc-900 border border-zinc-700 rounded-sm text-cyan-500 focus:ring-0 focus:ring-offset-0 cursor-pointer accent-cyan-500 flex-shrink-0"
-          />
+          <div className="flex items-center justify-center w-5 h-5 cursor-pointer flex-shrink-0">
+            <div className={`w-4 h-4 border rounded-sm flex items-center justify-center transition-colors ${
+              isChecked
+                ? 'bg-cyan-500 border-cyan-500'
+                : 'bg-zinc-900 border-zinc-700 hover:border-zinc-500'
+            }`}>
+              {isChecked && (
+                <svg className="w-3 h-3 text-black" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={3}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
+              )}
+            </div>
+          </div>
         )}
         <img
           src={`https://github.com/${p.github_username}.png?size=40`}

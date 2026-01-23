@@ -78,6 +78,59 @@ interface Task {
 const tasks: Map<string, Task> = new Map()
 let taskCounter = 0
 
+// Bulk job types and storage
+interface BulkJob {
+  id: string
+  action: 'enrich' | 'draft' | 'test'
+  prospectIds: number[]
+  status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
+  total: number
+  completed: number
+  failed: number
+  completedIds: number[]
+  failedIds: { id: number; error: string }[]
+  createdAt: string
+  updatedAt: string
+}
+
+const bulkJobs: Map<string, BulkJob> = new Map()
+let bulkJobCounter = 0
+
+// SSE clients for bulk job updates
+const bulkJobClients: Set<ServerResponse> = new Set()
+
+function broadcastBulkJobUpdate(job: BulkJob) {
+  const data = JSON.stringify(job)
+  bulkJobClients.forEach(client => {
+    client.write(`data: ${data}\n\n`)
+  })
+}
+
+function saveBulkJobToDb(job: BulkJob) {
+  try {
+    const db = new Database(DB_PATH)
+    db.prepare(`
+      INSERT OR REPLACE INTO bulk_jobs (id, action, prospect_ids, status, total, completed, failed, completed_ids, failed_ids, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      job.id,
+      job.action,
+      JSON.stringify(job.prospectIds),
+      job.status,
+      job.total,
+      job.completed,
+      job.failed,
+      JSON.stringify(job.completedIds),
+      JSON.stringify(job.failedIds),
+      job.createdAt,
+      job.updatedAt
+    )
+    db.close()
+  } catch (e) {
+    console.error('[DB] Failed to save bulk job:', e)
+  }
+}
+
 function loadTasksFromDb() {
   try {
     const db = new Database(DB_PATH, { readonly: true })
@@ -132,6 +185,150 @@ function broadcastTaskUpdate(task: Task) {
   sseClients.forEach(client => {
     client.write(`data: ${data}\n\n`)
   })
+}
+
+// Process a bulk job in background
+async function processBulkJob(job: BulkJob) {
+  const BATCH_SIZE = 10
+  const BATCH_DELAY_MS = 1000
+
+  job.status = 'running'
+  job.updatedAt = new Date().toISOString()
+  saveBulkJobToDb(job)
+  broadcastBulkJobUpdate(job)
+
+  // Get prospect data
+  const db = new Database(DB_PATH, { readonly: true })
+  const prospects = db.prepare(`
+    SELECT id, github_username, name, email, twitter
+    FROM prospects
+    WHERE id IN (${job.prospectIds.join(',')})
+  `).all() as Array<{ id: number; github_username: string; name: string | null; email: string | null; twitter: string | null }>
+  db.close()
+
+  // Create a map for quick lookup
+  const prospectMap = new Map(prospects.map(p => [p.id, p]))
+
+  // Process in batches
+  for (let i = 0; i < job.prospectIds.length; i += BATCH_SIZE) {
+    // Check if cancelled (re-fetch from Map to get current status)
+    const currentJob = bulkJobs.get(job.id)
+    if (currentJob?.status === 'cancelled') {
+      console.log(`\x1b[33m[BULK]\x1b[0m Job ${job.id} was cancelled, stopping at ${job.completed}/${job.total}`)
+      job.status = 'cancelled'
+      break
+    }
+
+    const batchIds = job.prospectIds.slice(i, i + BATCH_SIZE)
+    const batchPromises = batchIds.map(async (prospectId) => {
+      const prospect = prospectMap.get(prospectId)
+      if (!prospect) {
+        job.failed++
+        job.failedIds.push({ id: prospectId, error: 'Prospect not found' })
+        return
+      }
+
+      try {
+        // Mock test action - just sleep and optionally fail randomly
+        if (job.action === 'test') {
+          await new Promise(resolve => setTimeout(resolve, 200 + Math.random() * 300)) // 200-500ms per item
+          // 10% random failure rate for testing error handling
+          if (Math.random() < 0.1) {
+            throw new Error('Simulated random failure')
+          }
+          job.completed++
+          job.completedIds.push(prospectId)
+          return
+        }
+
+        // Build action payload for real actions
+        const actionPayload = job.action === 'enrich'
+          ? { action: 'enrich', username: prospect.github_username, name: prospect.name }
+          : { action: 'draft', username: prospect.github_username, name: prospect.name, email: prospect.email, twitter: prospect.twitter }
+
+        // Send to action endpoint (this triggers the Claude subprocess)
+        const response = await fetch('http://localhost:5173/api/action', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(actionPayload)
+        })
+
+        if (response.ok) {
+          const { taskId } = await response.json() as { taskId: string }
+
+          // Poll for task completion
+          let taskDone = false
+          let taskError: string | null = null
+          while (!taskDone) {
+            await new Promise(resolve => setTimeout(resolve, 2000)) // Poll every 2 seconds
+
+            // Check if bulk job was cancelled
+            const currentJob = bulkJobs.get(job.id)
+            if (currentJob?.status === 'cancelled') {
+              taskError = 'Bulk job cancelled'
+              break
+            }
+
+            // Check task status from our in-memory store
+            const task = tasks.get(taskId)
+            if (!task) {
+              taskError = 'Task not found'
+              break
+            }
+            if (task.status === 'done') {
+              taskDone = true
+            } else if (task.status === 'error') {
+              taskError = task.error || 'Task failed'
+              break
+            }
+            // If still 'running', continue polling
+          }
+
+          if (taskDone) {
+            job.completed++
+            job.completedIds.push(prospectId)
+          } else {
+            job.failed++
+            job.failedIds.push({ id: prospectId, error: taskError || 'Unknown error' })
+          }
+        } else {
+          job.failed++
+          job.failedIds.push({ id: prospectId, error: `HTTP ${response.status}` })
+        }
+      } catch (e) {
+        job.failed++
+        job.failedIds.push({ id: prospectId, error: String(e) })
+      }
+    })
+
+    await Promise.all(batchPromises)
+
+    // Update job status
+    job.updatedAt = new Date().toISOString()
+    saveBulkJobToDb(job)
+    broadcastBulkJobUpdate(job)
+
+    console.log(`\x1b[36m[BULK]\x1b[0m Job ${job.id}: ${job.completed}/${job.total} completed, ${job.failed} failed`)
+
+    // Delay between batches (unless this is the last batch or cancelled)
+    const jobAfterBatch = bulkJobs.get(job.id)
+    if (i + BATCH_SIZE < job.prospectIds.length && jobAfterBatch?.status !== 'cancelled') {
+      await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+    }
+  }
+
+  // Final status (check if cancelled via Map)
+  const finalJob = bulkJobs.get(job.id)
+  if (finalJob?.status !== 'cancelled') {
+    job.status = job.failed === job.total ? 'failed' : 'completed'
+  } else {
+    job.status = 'cancelled'
+  }
+  job.updatedAt = new Date().toISOString()
+  saveBulkJobToDb(job)
+  broadcastBulkJobUpdate(job)
+
+  console.log(`\x1b[32m[BULK]\x1b[0m Job ${job.id} finished: ${job.status} (${job.completed}/${job.total} completed, ${job.failed} failed)`)
 }
 
 // Plugin to handle action logging from the UI and trigger Claude
@@ -196,6 +393,129 @@ function actionLoggerPlugin() {
           )
           res.writeHead(200, { 'Content-Type': 'application/json' })
           res.end(JSON.stringify(taskList))
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // SSE endpoint for bulk job updates
+      server.middlewares.use('/api/bulk/stream', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'GET') {
+          res.writeHead(200, {
+            'Content-Type': 'text/event-stream',
+            'Cache-Control': 'no-cache',
+            'Connection': 'keep-alive',
+            'Access-Control-Allow-Origin': '*'
+          })
+
+          // Send initial state of all bulk jobs
+          const jobList = Array.from(bulkJobs.values()).sort((a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+          res.write(`event: init\ndata: ${JSON.stringify(jobList)}\n\n`)
+
+          bulkJobClients.add(res)
+          console.log('\x1b[35m[BULK-SSE]\x1b[0m Client connected, total:', bulkJobClients.size)
+
+          req.on('close', () => {
+            bulkJobClients.delete(res)
+            console.log('\x1b[35m[BULK-SSE]\x1b[0m Client disconnected, total:', bulkJobClients.size)
+          })
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Cancel a bulk job
+      server.middlewares.use('/api/bulk/cancel', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (chunk: Buffer) => body += chunk.toString())
+          req.on('end', () => {
+            try {
+              const { jobId } = JSON.parse(body)
+              const job = bulkJobs.get(jobId)
+              if (job && job.status === 'running') {
+                job.status = 'cancelled'
+                job.updatedAt = new Date().toISOString()
+                saveBulkJobToDb(job)
+                broadcastBulkJobUpdate(job)
+                console.log(`\x1b[33m[BULK]\x1b[0m Cancelled job ${jobId}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true, job }))
+              } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: 'Job not found or not running' }))
+              }
+            } catch (e) {
+              res.writeHead(400, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Invalid request' }))
+            }
+          })
+        } else {
+          res.writeHead(405)
+          res.end()
+        }
+      })
+
+      // Create a new bulk job
+      server.middlewares.use('/api/bulk', (req: IncomingMessage, res: ServerResponse) => {
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', (chunk: Buffer) => body += chunk.toString())
+          req.on('end', () => {
+            try {
+              const { action, prospectIds } = JSON.parse(body) as { action: 'enrich' | 'draft' | 'test'; prospectIds: number[] }
+
+              if (!action || !['enrich', 'draft', 'test'].includes(action) || !prospectIds || !Array.isArray(prospectIds) || prospectIds.length === 0) {
+                res.writeHead(400, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: false, error: 'Missing or invalid action/prospectIds' }))
+                return
+              }
+
+              const jobId = `bulk-${++bulkJobCounter}`
+              const now = new Date().toISOString()
+
+              const job: BulkJob = {
+                id: jobId,
+                action,
+                prospectIds,
+                status: 'pending',
+                total: prospectIds.length,
+                completed: 0,
+                failed: 0,
+                completedIds: [],
+                failedIds: [],
+                createdAt: now,
+                updatedAt: now
+              }
+
+              bulkJobs.set(jobId, job)
+              saveBulkJobToDb(job)
+              broadcastBulkJobUpdate(job)
+
+              console.log(`\x1b[36m[BULK]\x1b[0m Created job ${jobId}: ${action} ${prospectIds.length} prospects`)
+
+              // Start processing in background
+              processBulkJob(job)
+
+              res.writeHead(200, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: true, jobId, job }))
+            } catch (e) {
+              console.error('[BULK] Error creating job:', e)
+              res.writeHead(500, { 'Content-Type': 'application/json' })
+              res.end(JSON.stringify({ ok: false, error: 'Failed to create job' }))
+            }
+          })
+        } else if (req.method === 'GET') {
+          // List all bulk jobs
+          const jobList = Array.from(bulkJobs.values()).sort((a, b) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )
+          res.writeHead(200, { 'Content-Type': 'application/json' })
+          res.end(JSON.stringify(jobList))
         } else {
           res.writeHead(405)
           res.end()
@@ -341,6 +661,15 @@ INSTRUCTIONS:
                 res.writeHead(200, { 'Content-Type': 'application/json' })
                 res.end(JSON.stringify({ ok: true }))
                 return
+              } else if (action.action === 'delete_draft') {
+                // Delete a draft
+                const db = new Database(DB_PATH)
+                db.prepare(`DELETE FROM outreach_messages WHERE id = ?`).run(action.draftId)
+                db.close()
+                console.log(`\x1b[31m[DRAFT]\x1b[0m Deleted draft ${action.draftId}`)
+                res.writeHead(200, { 'Content-Type': 'application/json' })
+                res.end(JSON.stringify({ ok: true }))
+                return
               } else if (action.action === 'update_outreach_status') {
                 // Direct DB update for outreach status
                 const db = new Database(DB_PATH)
@@ -352,6 +681,7 @@ INSTRUCTIONS:
                 return
               } else if (action.action === 'research') {
                 const source = action.source || 'any'
+
                 prompt = `/prospect-researcher
 
 Find new AI engineer prospects${source !== 'any' ? ` from ${source}` : ''}.
@@ -360,10 +690,15 @@ INSTRUCTIONS:
 1. First check what sources have been checked recently:
    sqlite3 -header -column prospects.db "SELECT source_type, source_name, checked_at FROM sources_checked ORDER BY checked_at DESC LIMIT 10"
 
-2. Pick a source that needs refreshing (or a new one). Good options:
-   - Twitter/Nitter: Use /agent-browser skill to search nitter.poast.org for "built with claude", "vibe coding", "shipped in a weekend"
-   - Hacker News: WebFetch the Algolia API for Show HN posts about AI tools, agents
-   - GitHub: Use gh CLI to find contributors to AI repos (vercel/ai, anthropics/claude-code, etc.)
+2. Pick a source. Options:
+
+   - Twitter/Nitter: Great for real-time content - engineers post about what they're building daily.
+     Use /agent-browser to search nitter.poast.org
+     Search ideas: "gemini flash", "opus", "vibe coding", "cursor composer", "ai agent", "mcp server", "agent skills", "just launched", "just shipped", "open sourced", "weekend project", "vercel/ai", "browser-use", "anthropic sdk", "claude code", "ralph loop", "ralph tui"
+
+   - Hacker News: WebFetch the Algolia API for Show HN posts about AI tools
+
+   - GitHub: Use gh CLI to find information about contributors who may use AI. GitHub can often be a good source to find an email, real contributions, or a personal website.
 
 3. For each potential prospect:
    - Check if already in DB: sqlite3 prospects.db "SELECT 1 FROM prospects WHERE github_username='{user}' UNION SELECT 1 FROM rejected WHERE github_username='{user}'"

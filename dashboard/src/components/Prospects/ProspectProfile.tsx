@@ -7,9 +7,10 @@ interface ProspectProfileProps {
   p: Prospect
   drafts: Draft[]
   onDraftClick: (draft: Draft) => void
+  activeTaskType: 'enrich' | 'draft' | null
 }
 
-export function ProspectProfile({ p, drafts, onDraftClick }: ProspectProfileProps) {
+export function ProspectProfile({ p, drafts, onDraftClick, activeTaskType }: ProspectProfileProps) {
   const prospectDrafts = drafts.filter(d => d.github_username === p.github_username)
 
   const signalStyles = {
@@ -26,11 +27,50 @@ export function ProspectProfile({ p, drafts, onDraftClick }: ProspectProfileProp
         <div className="flex items-start justify-between">
           {/* Left: Avatar + Name */}
           <div className="flex items-start gap-4">
-            <img
-              src={`https://github.com/${p.github_username}.png?size=80`}
-              alt=""
-              className="w-14 h-14 rounded-full bg-zinc-800 flex-shrink-0"
-            />
+            <div className="relative flex-shrink-0 w-14 h-14 flex items-center justify-center">
+              {/* Double pendulum glow via nested epicycles */}
+              {activeTaskType && (
+                <>
+                  {/* Soft ambient base */}
+                  <div
+                    className={`absolute inset-0 rounded-full blur-lg ${
+                      activeTaskType === 'enrich' ? 'bg-cyan-500/30' : 'bg-emerald-500/30'
+                    }`}
+                    style={{ animation: 'glowBreathe 5s ease-in-out infinite' }}
+                  />
+                  {/* Epicycle 1: 10s (small orbits for compact avatar) */}
+                  <div
+                    className="absolute inset-0 flex items-center justify-center"
+                    style={{ animation: 'orbit1-sm 10s linear infinite' }}
+                  >
+                    {/* Epicycle 2: 15s reverse */}
+                    <div
+                      className="w-full h-full flex items-center justify-center"
+                      style={{ animation: 'orbit2-sm 15s linear infinite' }}
+                    >
+                      {/* Epicycle 3: 17s */}
+                      <div
+                        className="w-full h-full flex items-center justify-center"
+                        style={{ animation: 'orbit3-sm 17s linear infinite' }}
+                      >
+                        {/* Wandering glow source */}
+                        <div
+                          className={`w-12 h-12 rounded-full blur-md ${
+                            activeTaskType === 'enrich' ? 'bg-cyan-400' : 'bg-emerald-400'
+                          }`}
+                          style={{ animation: 'glowFlicker 3.7s ease-in-out infinite' }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+              <img
+                src={`https://github.com/${p.github_username}.png?size=80`}
+                alt=""
+                className="relative w-14 h-14 rounded-full bg-zinc-800"
+              />
+            </div>
             <div>
               <h2 className="text-xl font-medium text-white">{p.name || p.github_username}</h2>
               <div className="flex items-center gap-3 mt-1.5">

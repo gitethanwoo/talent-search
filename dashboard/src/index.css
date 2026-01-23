@@ -3,3 +3,73 @@
 body {
   @apply bg-zinc-950 text-gray-100 min-h-screen;
 }
+
+/* Organic layered glow animations for active tasks */
+
+/* Epicycle rotations - prime-ish periods, dwell at extremes */
+@keyframes orbit1 {
+  0%, 5% { transform: rotate(0deg) translateX(8px) rotate(0deg); }
+  20% { transform: rotate(90deg) translateX(8px) rotate(-90deg); }
+  45%, 55% { transform: rotate(180deg) translateX(8px) rotate(-180deg); }
+  80% { transform: rotate(270deg) translateX(8px) rotate(-270deg); }
+  95%, 100% { transform: rotate(360deg) translateX(8px) rotate(-360deg); }
+}
+
+@keyframes orbit2 {
+  0%, 6% { transform: rotate(0deg) translateX(5px) rotate(0deg); }
+  22% { transform: rotate(-90deg) translateX(5px) rotate(90deg); }
+  44%, 56% { transform: rotate(-180deg) translateX(5px) rotate(180deg); }
+  78% { transform: rotate(-270deg) translateX(5px) rotate(270deg); }
+  94%, 100% { transform: rotate(-360deg) translateX(5px) rotate(360deg); }
+}
+
+@keyframes orbit3 {
+  0%, 7% { transform: rotate(0deg) translateX(4px) rotate(0deg); }
+  18% { transform: rotate(90deg) translateX(4px) rotate(-90deg); }
+  43%, 57% { transform: rotate(180deg) translateX(4px) rotate(-180deg); }
+  82% { transform: rotate(270deg) translateX(4px) rotate(-270deg); }
+  93%, 100% { transform: rotate(360deg) translateX(4px) rotate(-360deg); }
+}
+
+/* Smaller orbits for compact avatars (profile view) */
+@keyframes orbit1-sm {
+  0%, 5% { transform: rotate(0deg) translateX(4px) rotate(0deg); }
+  20% { transform: rotate(90deg) translateX(4px) rotate(-90deg); }
+  45%, 55% { transform: rotate(180deg) translateX(4px) rotate(-180deg); }
+  80% { transform: rotate(270deg) translateX(4px) rotate(-270deg); }
+  95%, 100% { transform: rotate(360deg) translateX(4px) rotate(-360deg); }
+}
+
+@keyframes orbit2-sm {
+  0%, 6% { transform: rotate(0deg) translateX(2.5px) rotate(0deg); }
+  22% { transform: rotate(-90deg) translateX(2.5px) rotate(90deg); }
+  44%, 56% { transform: rotate(-180deg) translateX(2.5px) rotate(180deg); }
+  78% { transform: rotate(-270deg) translateX(2.5px) rotate(270deg); }
+  94%, 100% { transform: rotate(-360deg) translateX(2.5px) rotate(360deg); }
+}
+
+@keyframes orbit3-sm {
+  0%, 7% { transform: rotate(0deg) translateX(2px) rotate(0deg); }
+  18% { transform: rotate(90deg) translateX(2px) rotate(-90deg); }
+  43%, 57% { transform: rotate(180deg) translateX(2px) rotate(-180deg); }
+  82% { transform: rotate(270deg) translateX(2px) rotate(-270deg); }
+  93%, 100% { transform: rotate(360deg) translateX(2px) rotate(-360deg); }
+}
+
+/* Intensity flicker - irregular */
+@keyframes glowFlicker {
+  0%, 100% { opacity: 0.7; }
+  13% { opacity: 0.5; }
+  27% { opacity: 0.8; }
+  41% { opacity: 0.4; }
+  53% { opacity: 0.75; }
+  67% { opacity: 0.55; }
+  79% { opacity: 0.85; }
+  91% { opacity: 0.6; }
+}
+
+/* Soft size breathing */
+@keyframes glowBreathe {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.15); }
+}

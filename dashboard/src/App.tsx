@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
 import TaskViewerPage from './components/TaskViewer'
+import { GlowTest } from './components/GlowTest'
 import { TaskPanel } from './components/TaskPanel'
 import { DraftCard, DraftModal } from './components/Drafts'
 import { ProspectListItem, ProspectProfile } from './components/Prospects'
-import type { Prospect, Draft } from './types'
+import type { Prospect, Draft, AgentTask } from './types'
 import { isContactable } from './types'
 
 type PipelineStage = 'all' | 'needs_enrichment' | 'needs_draft' | 'ready_to_send' | 'contacted'
@@ -39,11 +40,15 @@ interface Data {
 }
 
 function App() {
-  // Simple routing: /components shows the component preview page
-  const isComponentPage = window.location.pathname === '/components' || window.location.search.includes('view=components')
+  // Simple routing for dev/test pages
+  const pathname = window.location.pathname
 
-  if (isComponentPage) {
+  if (pathname === '/components' || window.location.search.includes('view=components')) {
     return <TaskViewerPage />
+  }
+
+  if (pathname === '/glow') {
+    return <GlowTest />
   }
 
   const [data, setData] = useState<Data | null>(null)
@@ -55,6 +60,16 @@ function App() {
   const [contactableOnly, setContactableOnly] = useState(false)
   const [bulkMode, setBulkMode] = useState(false)
   const [checkedIds, setCheckedIds] = useState<Set<number>>(new Set())
+  const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null)
+  const [activeBulkJob, setActiveBulkJob] = useState<{
+    id: string
+    action: 'enrich' | 'draft' | 'test'
+    status: 'pending' | 'running' | 'completed' | 'cancelled' | 'failed'
+    total: number
+    completed: number
+    failed: number
+  } | null>(null)
+  const [activeTasks, setActiveTasks] = useState<AgentTask[]>([])
 
   const fetchData = () => {
     fetch('/api/data')
@@ -71,6 +86,71 @@ function App() {
     const interval = setInterval(fetchData, 5000)
     return () => clearInterval(interval)
   }, [])
+
+  // Subscribe to bulk job updates via SSE
+  useEffect(() => {
+    const eventSource = new EventSource('/api/bulk/stream')
+
+    eventSource.addEventListener('init', (e) => {
+      const jobs = JSON.parse(e.data)
+      // Find the most recent active job (running or pending)
+      const activeJob = jobs.find((j: typeof activeBulkJob) => j && (j.status === 'running' || j.status === 'pending'))
+      if (activeJob) {
+        setActiveBulkJob(activeJob)
+      }
+    })
+
+    eventSource.onmessage = (e) => {
+      const job = JSON.parse(e.data)
+      setActiveBulkJob(job)
+      // Refresh data when job completes
+      if (job.status === 'completed' || job.status === 'cancelled' || job.status === 'failed') {
+        fetchData()
+        // Clear the active job after a delay so user can see final state
+        setTimeout(() => setActiveBulkJob(null), 3000)
+      }
+    }
+
+    eventSource.onerror = () => {
+      console.error('[BULK-SSE] Connection error')
+    }
+
+    return () => eventSource.close()
+  }, [])
+
+  // Subscribe to task updates for active task indicators
+  useEffect(() => {
+    const eventSource = new EventSource('/api/tasks/stream')
+
+    eventSource.addEventListener('init', (e) => {
+      const taskList = JSON.parse(e.data) as AgentTask[]
+      setActiveTasks(taskList.filter(t => t.status === 'running'))
+    })
+
+    eventSource.onmessage = (e) => {
+      const task = JSON.parse(e.data) as AgentTask
+      setActiveTasks(prev => {
+        if (task.status === 'running') {
+          const exists = prev.find(t => t.id === task.id)
+          if (exists) return prev.map(t => t.id === task.id ? task : t)
+          return [...prev, task]
+        } else {
+          return prev.filter(t => t.id !== task.id)
+        }
+      })
+    }
+
+    return () => eventSource.close()
+  }, [])
+
+  // Get active task type for a prospect
+  const getActiveTaskType = (username: string): 'enrich' | 'draft' | null => {
+    const task = activeTasks.find(t => t.target === username && t.status === 'running')
+    if (!task) return null
+    if (task.action === 'enrich') return 'enrich'
+    if (task.action === 'draft') return 'draft'
+    return null
+  }
 
   // Helper to determine prospect's pipeline stage
   const getProspectStage = (p: Prospect, drafts: Draft[]): PipelineStage => {
@@ -112,49 +192,41 @@ function App() {
   }
   const currentBulkAction = bulkActionForStage[pipelineStage]
 
-  // Bulk action handlers - process in batches of 10
-  const BATCH_SIZE = 10
-  const BATCH_DELAY_MS = 500
+  // Bulk action handlers - uses server-side job queue
+  const handleBulkAction = async (action: 'enrich' | 'draft' | 'test') => {
+    const prospectIds = Array.from(checkedIds)
+    if (prospectIds.length === 0) return
 
-  const processBatch = async (
-    prospects: Prospect[],
-    action: (p: Prospect) => Promise<void>
-  ) => {
-    for (let i = 0; i < prospects.length; i += BATCH_SIZE) {
-      const batch = prospects.slice(i, i + BATCH_SIZE)
-      await Promise.all(batch.map(action))
-      if (i + BATCH_SIZE < prospects.length) {
-        await new Promise(resolve => setTimeout(resolve, BATCH_DELAY_MS))
+    setCheckedIds(new Set())
+    setBulkMode(false)
+
+    try {
+      const response = await fetch('/api/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action, prospectIds })
+      })
+
+      if (!response.ok) {
+        console.error('Failed to create bulk job')
       }
+    } catch (e) {
+      console.error('Error creating bulk job:', e)
     }
   }
 
-  const handleBulkEnrich = async () => {
-    const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
-    setCheckedIds(new Set())
-    setBulkMode(false)
+  const handleCancelBulkJob = async () => {
+    if (!activeBulkJob) return
 
-    await processBatch(prospects, async (p) => {
-      await fetch('/api/action', {
+    try {
+      await fetch('/api/bulk/cancel', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'enrich', username: p.github_username, name: p.name })
+        body: JSON.stringify({ jobId: activeBulkJob.id })
       })
-    })
-  }
-
-  const handleBulkDraft = async () => {
-    const prospects = data?.prospects.filter(p => checkedIds.has(p.id)) || []
-    setCheckedIds(new Set())
-    setBulkMode(false)
-
-    await processBatch(prospects, async (p) => {
-      await fetch('/api/action', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'draft', username: p.github_username, name: p.name, email: p.email, twitter: p.twitter })
-      })
-    })
+    } catch (e) {
+      console.error('Error cancelling bulk job:', e)
+    }
   }
 
   const handleSelectAll = () => {
@@ -234,14 +306,28 @@ function App() {
 
         {/* Drafts Tab */}
         {tab === 'drafts' && (
-          <div className="space-y-1">
-            {data.drafts.length === 0 ? (
-              <div className="text-center py-16">
-                <div className="font-mono text-zinc-700 text-sm">NO_DRAFTS_PENDING</div>
-              </div>
-            ) : (
-              data.drafts.map((d, i) => <DraftCard key={d.id} draft={d} index={i} />)
-            )}
+          <div className="flex-1 min-h-0 overflow-y-auto border border-zinc-900">
+            <div className="space-y-1">
+              {data.drafts.length === 0 ? (
+                <div className="text-center py-16">
+                  <div className="font-mono text-zinc-700 text-sm">NO_DRAFTS_PENDING</div>
+                </div>
+              ) : (
+                data.drafts.map((d, i) => <DraftCard key={d.id} draft={d} index={i} />)
+              )}
+            </div>
+            {/* Bottom CTA */}
+            <div className="py-12 flex justify-center">
+              <button
+                onClick={() => {
+                  setTab('prospects')
+                  setPipelineStage('needs_draft')
+                }}
+                className="font-mono text-xs uppercase tracking-wider px-6 py-3 text-zinc-500 border border-zinc-800 hover:text-emerald-400 hover:border-emerald-500/50 hover:bg-emerald-500/10 transition-all"
+              >
+                + Create Drafts
+              </button>
+            </div>
           </div>
         )}
 
@@ -279,7 +365,7 @@ function App() {
                       Contactable only
                     </span>
                   </label>
-                  {currentBulkAction && (
+                  {!activeBulkJob && (
                     <button
                       onClick={() => {
                         setBulkMode(!bulkMode)
@@ -297,8 +383,51 @@ function App() {
                 </div>
               </div>
 
+              {/* Active Bulk Job Progress Bar */}
+              {activeBulkJob && (
+                <div className="p-3 border-b border-zinc-900 bg-zinc-900/70 flex-shrink-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      {activeBulkJob.status === 'running' && (
+                        <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                      )}
+                      <span className="font-mono text-[10px] uppercase tracking-wider text-zinc-400">
+                        {activeBulkJob.status === 'running' ? `${activeBulkJob.action}ing` : activeBulkJob.status}
+                      </span>
+                      <span className="font-mono text-xs text-zinc-300">
+                        {activeBulkJob.completed}/{activeBulkJob.total}
+                      </span>
+                      {activeBulkJob.failed > 0 && (
+                        <span className="font-mono text-[10px] text-red-400">
+                          ({activeBulkJob.failed} failed)
+                        </span>
+                      )}
+                    </div>
+                    {activeBulkJob.status === 'running' && (
+                      <button
+                        onClick={handleCancelBulkJob}
+                        className="font-mono text-[10px] uppercase tracking-wider px-2 py-1 text-red-400 border border-red-500/30 hover:bg-red-500/20 transition-all"
+                      >
+                        Cancel
+                      </button>
+                    )}
+                  </div>
+                  <div className="h-1 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-300 ${
+                        activeBulkJob.status === 'completed' ? 'bg-emerald-500' :
+                        activeBulkJob.status === 'cancelled' ? 'bg-amber-500' :
+                        activeBulkJob.status === 'failed' ? 'bg-red-500' :
+                        'bg-cyan-500'
+                      }`}
+                      style={{ width: `${(activeBulkJob.completed / activeBulkJob.total) * 100}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* Bulk Actions Bar - contextual based on pipeline stage */}
-              {bulkMode && currentBulkAction && checkedIds.size > 0 && (
+              {bulkMode && checkedIds.size > 0 && !activeBulkJob && (
                 <div className="p-3 border-b border-zinc-900 bg-zinc-900/50 flex items-center justify-between flex-shrink-0">
                   <div className="flex items-center gap-2">
                     <button
@@ -311,27 +440,29 @@ function App() {
                       {checkedIds.size} selected
                     </span>
                   </div>
-                  {currentBulkAction === 'enrich' && (
-                    <button
-                      onClick={handleBulkEnrich}
-                      className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
-                    >
-                      Enrich {checkedIds.size}
-                    </button>
-                  )}
-                  {currentBulkAction === 'draft' && (
-                    <button
-                      onClick={handleBulkDraft}
-                      className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
-                    >
-                      Draft {checkedIds.size}
-                    </button>
-                  )}
+                  <div className="flex items-center gap-2">
+                    {currentBulkAction === 'enrich' && (
+                      <button
+                        onClick={() => handleBulkAction('enrich')}
+                        className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all"
+                      >
+                        Enrich {checkedIds.size}
+                      </button>
+                    )}
+                    {currentBulkAction === 'draft' && (
+                      <button
+                        onClick={() => handleBulkAction('draft')}
+                        className="font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition-all"
+                      >
+                        Draft {checkedIds.size}
+                      </button>
+                    )}
+                  </div>
                 </div>
               )}
 
               {/* Select prompt when in bulk mode but none selected */}
-              {bulkMode && currentBulkAction && checkedIds.size === 0 && (
+              {bulkMode && checkedIds.size === 0 && !activeBulkJob && (
                 <div className="p-3 border-b border-zinc-900 bg-zinc-900/30 flex-shrink-0">
                   <button
                     onClick={handleSelectAll}
@@ -344,18 +475,31 @@ function App() {
 
               {/* List */}
               <div className="flex-1 overflow-y-auto">
-                {filteredProspects.map((p) => (
+                {filteredProspects.map((p, index) => (
                   <ProspectListItem
                     key={p.id}
                     p={p}
                     isSelected={selectedProspectId === p.id}
                     isChecked={checkedIds.has(p.id)}
                     onClick={() => setSelectedProspectId(p.id)}
-                    onCheck={(checked) => {
+                    onCheckClick={(e) => {
                       const newSet = new Set(checkedIds)
-                      if (checked) newSet.add(p.id)
-                      else newSet.delete(p.id)
+                      const willBeChecked = !checkedIds.has(p.id)
+
+                      // Shift+click for range selection
+                      if (e.shiftKey && lastCheckedIndex !== null && willBeChecked) {
+                        const start = Math.min(lastCheckedIndex, index)
+                        const end = Math.max(lastCheckedIndex, index)
+                        for (let i = start; i <= end; i++) {
+                          newSet.add(filteredProspects[i].id)
+                        }
+                      } else {
+                        if (willBeChecked) newSet.add(p.id)
+                        else newSet.delete(p.id)
+                      }
+
                       setCheckedIds(newSet)
+                      setLastCheckedIndex(index)
                     }}
                     hasDraft={data.drafts.some(d => d.github_username === p.github_username)}
                     showCheckbox={bulkMode}
@@ -371,6 +515,7 @@ function App() {
                   p={selectedProspect}
                   drafts={data.drafts}
                   onDraftClick={(draft) => setDraftModal(draft)}
+                  activeTaskType={getActiveTaskType(selectedProspect.github_username)}
                 />
               ) : (
                 <div className="h-full flex items-center justify-center">
@@ -386,9 +531,9 @@ function App() {
 
         {/* Sources Tab */}
         {tab === 'sources' && (
-          <div className="border border-zinc-900">
+          <div className="flex-1 min-h-0 overflow-y-auto border border-zinc-900">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 bg-zinc-950">
                 <tr className="border-b border-zinc-800 bg-zinc-900/50">
                   <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-12">#</th>
                   <th className="text-left py-3 px-4 font-mono text-[10px] uppercase tracking-wider text-zinc-600 w-32">Type</th>
@@ -409,6 +554,25 @@ function App() {
                 ))}
               </tbody>
             </table>
+            {/* Bottom CTA */}
+            <div className="py-12 flex justify-center">
+              <button
+                onClick={() => {
+                  fetch('/api/action', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'research' })
+                  })
+                }}
+                className="font-mono text-xs uppercase tracking-wider px-6 py-3 text-zinc-500 border border-zinc-800 hover:text-violet-400 hover:border-violet-500/50 hover:bg-violet-500/10 transition-all flex items-center gap-2"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-4 h-4">
+                  <path d="M9 6a.75.75 0 01.75.75v1.5h1.5a.75.75 0 010 1.5h-1.5v1.5a.75.75 0 01-1.5 0v-1.5h-1.5a.75.75 0 010-1.5h1.5v-1.5A.75.75 0 019 6z" />
+                  <path fillRule="evenodd" d="M2 9a7 7 0 1112.452 4.391l3.328 3.329a.75.75 0 11-1.06 1.06l-3.329-3.328A7 7 0 012 9zm7-5.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11z" clipRule="evenodd" />
+                </svg>
+                Find More Prospects
+              </button>
+            </div>
           </div>
         )}
       </div>

@@ -10,6 +10,7 @@ interface DraftCardProps {
 export function DraftCard({ draft, index }: DraftCardProps) {
   const [open, setOpen] = useState(false)
   const [rewriting, setRewriting] = useState(false)
+  const [deleting, setDeleting] = useState(false)
 
   const handleRewrite = (e: React.MouseEvent) => {
     e.stopPropagation()
@@ -27,6 +28,21 @@ export function DraftCard({ draft, index }: DraftCardProps) {
     })
     setRewriting(true)
     setTimeout(() => setRewriting(false), 3000)
+  }
+
+  const handleDelete = (e: React.MouseEvent) => {
+    e.stopPropagation()
+    if (!confirm(`Delete draft for ${draft.name || draft.github_username}?`)) return
+
+    setDeleting(true)
+    fetch('/api/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'delete_draft',
+        draftId: draft.id
+      })
+    })
   }
 
   const contactButton = draft.email ? (
@@ -79,17 +95,30 @@ export function DraftCard({ draft, index }: DraftCardProps) {
             <div className="font-mono text-[10px] text-zinc-600 uppercase tracking-wider">
               {draft.email || 'no email on file'}
             </div>
-            <button
-              onClick={handleRewrite}
-              disabled={rewriting}
-              className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 border transition-all ${
-                rewriting
-                  ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
-                  : 'text-zinc-500 border-zinc-700 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10'
-              }`}
-            >
-              {rewriting ? '↻ Rewriting...' : '↻ Rewrite'}
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleDelete}
+                disabled={deleting}
+                className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 border transition-all ${
+                  deleting
+                    ? 'bg-red-500/20 text-red-400 border-red-500/30'
+                    : 'text-zinc-500 border-zinc-700 hover:text-red-400 hover:border-red-500/50 hover:bg-red-500/10'
+                }`}
+              >
+                {deleting ? '× Deleting...' : '× Delete'}
+              </button>
+              <button
+                onClick={handleRewrite}
+                disabled={rewriting}
+                className={`font-mono text-[10px] uppercase tracking-wider px-3 py-1.5 border transition-all ${
+                  rewriting
+                    ? 'bg-amber-500/20 text-amber-400 border-amber-500/30'
+                    : 'text-zinc-500 border-zinc-700 hover:text-amber-400 hover:border-amber-500/50 hover:bg-amber-500/10'
+                }`}
+              >
+                {rewriting ? '↻ Rewriting...' : '↻ Rewrite'}
+              </button>
+            </div>
           </div>
           <div className="bg-zinc-900 border border-zinc-800 p-4 font-mono text-sm text-zinc-400 whitespace-pre-wrap leading-relaxed">
             {draft.body}
